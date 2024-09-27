@@ -3,52 +3,52 @@
 
 #include <stdint.h>
 
-/* 取得結果 */
+/* Acquisition result */
 typedef enum CommandLineParserResultTag {
-    COMMAND_LINE_PARSER_RESULT_OK,                                    /* 正常終了 */
-    COMMAND_LINE_PARSER_RESULT_INVALID_ARGUMENT,                      /* 不正な引数 */
-    COMMAND_LINE_PARSER_RESULT_INSUFFICIENT_OTHER_STRING_ARRAY_SIZE,  /* その他の文字列が入った配列サイズが足らない */
-    COMMAND_LINE_PARSER_RESULT_NOT_SPECIFY_ARGUMENT_TO_OPTION,        /* 引数の指定が必須のオプションで引数の指定がない */
-    COMMAND_LINE_PARSER_RESULT_UNKNOWN_OPTION,                        /* 定義にないオプションが指定された */
-    COMMAND_LINE_PARSER_RESULT_OPTION_MULTIPLY_SPECIFIED,             /* オプションが複数回指定された */
-    COMMAND_LINE_PARSER_RESULT_INVALID_SPECIFICATION,                 /* 無効な仕様 */
-    COMMAND_LINE_PARSER_RESULT_INVAILD_SHORT_OPTION_ARGUMENT          /* ショートオプションの引数の指定が不適切 */
+    COMMAND_LINE_PARSER_RESULT_OK,                                    /* normal termination */
+    COMMAND_LINE_PARSER_RESULT_INVALID_ARGUMENT,                      /* Invalid argument */
+    COMMAND_LINE_PARSER_RESULT_INSUFFICIENT_OTHER_STRING_ARRAY_SIZE,  /* The size of the array containing other strings is insufficient */
+    COMMAND_LINE_PARSER_RESULT_NOT_SPECIFY_ARGUMENT_TO_OPTION,        /* No argument was specified for an option that requires an argument */
+    COMMAND_LINE_PARSER_RESULT_UNKNOWN_OPTION,                        /* An option not defined was specified */
+    COMMAND_LINE_PARSER_RESULT_OPTION_MULTIPLY_SPECIFIED,             /* Option specified multiple times */
+    COMMAND_LINE_PARSER_RESULT_INVALID_SPECIFICATION,                 /* Invalid specification */
+    COMMAND_LINE_PARSER_RESULT_INVAILD_SHORT_OPTION_ARGUMENT          /* Short option argument specified incorrectly */
 } CommandLineParserResult;
 
-/* 論理定数 */
+/* logical constant */
 typedef enum CommandLineParserBoolTag {
-    COMMAND_LINE_PARSER_FALSE = 0,	/* 偽 */
-    COMMAND_LINE_PARSER_TRUE		    /* 真 */
+    COMMAND_LINE_PARSER_FALSE = 0,	/* False */
+    COMMAND_LINE_PARSER_TRUE		    /* true */
 } CommandLineParserBool;
 
-/* コマンドラインパーサ仕様 */
-/* 補足）コマンドラインパーサ仕様の配列の最後の要素の短いオプションに0, 長いオプションにNULLを指定して下さい */
+/* Command line parser specification */
+/* Supplementary Note) In the last element of the command line parser specification array, specify 0 for the short option and NULL for the long option. */
 struct CommandLineParserSpecification {
-    char 				          short_option;		  /* [in] 短いオプション文字列        */
-    const char* 		      long_option;		  /* [in] 長いオプション文字列        */
-    const char* 		      description;		  /* [in] 引数の説明                  */
-    CommandLineParserBool	need_argument;		/* [in] オプションに引数は必要か？  */
-    const char*				    argument_string;	/* [in,out] 得られた文字列          */
-    CommandLineParserBool	acquired;		      /* [out] オプションが指定されたか？ */
+    char 				          short_option;		  /* [in] Short option string */
+    const char* 		      long_option;		  /* [in] Long option string */
+    const char* 		      description;		  /* [in] Argument description */
+    CommandLineParserBool	need_argument;		/* [in] Does the option require an argument? */
+    const char*				    argument_string;	/* [in,out] Obtained string */
+    CommandLineParserBool	acquired;		      /* [out] Was an option specified? */
 };
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* 引数説明の印字 */
+/* Print argument description */
 void CommandLineParser_PrintDescription(
         const struct CommandLineParserSpecification* clps);
 
-/* オプション名からそのオプションが指定されたか取得 */
+/* Get whether the option was specified from the option name */
 CommandLineParserBool CommandLineParser_GetOptionAcquired(
         const struct CommandLineParserSpecification* clps, const char* option_name);
 
-/* オプション名からそのオプション引数を取得 */
+/* Get the option arguments from the option name */
 const char* CommandLineParser_GetArgumentString(
         const struct CommandLineParserSpecification* clps, const char* option_name);
 
-/* 引数のパース */
+/* Parse arguments */
 CommandLineParserResult CommandLineParser_ParseArguments(
         struct CommandLineParserSpecification* clps,
         int32_t argc, const char* const* argv,

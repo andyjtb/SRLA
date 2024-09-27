@@ -9,29 +9,29 @@
 #include "srla_internal.h"
 #include "srla_utility.h"
 
-/* マクロ展開を使用する */
+/* Use macro expansion */
 #define SRLACODER_USE_MACROS 1
 
-/* メモリアラインメント */
+/* memory alignment */
 #define SRLACODER_MEMORY_ALIGNMENT 16
-/* log2(最大分割数) */
+/* log2(maximum number of divisions) */
 #define SRLACODER_LOG2_MAX_NUM_PARTITIONS 10
-/* 最大分割数 */
+/* Maximum number of divisions */
 #define SRLACODER_MAX_NUM_PARTITIONS (1 << SRLACODER_LOG2_MAX_NUM_PARTITIONS)
-/* パラメータ記録領域ビット数 */
+/* Number of bits in parameter recording area */
 #define SRLACODER_RICE_PARAMETER_BITS 5
-/* ガンマ符号長サイズ */
+/* Gamma code length size */
 #define SRLACODER_GAMMA_BITS(uint) (((uint) == 0) ? 1 : ((2 * SRLAUTILITY_LOG2CEIL(uint + 2)) - 1))
 
-/* 符号の区別 */
+/* Sign Sensitivity */
 typedef enum SRLACoderCodeTypeTag {
-    SRLACODER_CODE_TYPE_RICE = 0, /* TODO: 将来的にGolombにするべきかも */
+    SRLACODER_CODE_TYPE_RICE = 0, /* TODO: Maybe make it Golomb in the future */
     SRLACODER_CODE_TYPE_RECURSIVE_RICE = 1,
-    SRLACODER_CODE_TYPE_ALLZERO = 2, /* 疑似ステレオ/逆相などで片チャンネルだけ全て0になる場合がある */
+    SRLACODER_CODE_TYPE_ALLZERO = 2, /* In the case of pseudo-stereo/reverse phase, one channel may be all 0 */
     SRLACODER_CODE_TYPE_INVALID
 } SRLACoderCodeType;
 
-/* 符号化ハンドル */
+/* encoding handle */
 struct SRLACoder {
     uint8_t alloced_by_own;
     double part_mean[SRLACODER_LOG2_MAX_NUM_PARTITIONS + 1][SRLACODER_MAX_NUM_PARTITIONS];
@@ -39,30 +39,30 @@ struct SRLACoder {
     void *work;
 };
 
-/* 符号化ハンドルの作成に必要なワークサイズの計算 */
+/* Calculate the work size required to create the encoding handle */
 int32_t SRLACoder_CalculateWorkSize(uint32_t max_num_samples)
 {
     int32_t work_size;
 
-    /* ハンドル分のサイズ */
+    /* Size of handle */
     work_size = sizeof(struct SRLACoder) + SRLACODER_MEMORY_ALIGNMENT;
 
-    /* 符号サンプルバッファのサイズ */
+    /* Size of code sample buffer */
     work_size += SRLACODER_MEMORY_ALIGNMENT + sizeof(uint32_t) * max_num_samples;
 
     return work_size;
 }
 
-/* 符号化ハンドルの作成 */
+/* Create an encoding handle */
 struct SRLACoder* SRLACoder_Create(uint32_t max_num_samples, void *work, int32_t work_size)
 {
     struct SRLACoder *coder;
     uint8_t tmp_alloc_by_own = 0;
     uint8_t *work_ptr;
 
-    /* ワーク領域時前確保の場合 */
+    /* In case of pre-allocation of work area */
     if ((work == NULL) && (work_size == 0)) {
-        /* 引数を自前の計算値に差し替える */
+        /* Replace arguments with your own calculated values ​​*/
         if ((work_size = SRLACoder_CalculateWorkSize(max_num_samples)) < 0) {
             return NULL;
         }
@@ -70,29 +70,29 @@ struct SRLACoder* SRLACoder_Create(uint32_t max_num_samples, void *work, int32_t
         tmp_alloc_by_own = 1;
     }
 
-    /* 引数チェック */
+    /* Argument check */
     if ((work == NULL) || (work_size < SRLACoder_CalculateWorkSize(max_num_samples))) {
         return NULL;
     }
 
-    /* ワーク領域先頭取得 */
+    /* Get the start of the work area */
     work_ptr = (uint8_t *)work;
 
-    /* ハンドル領域確保 */
+    /* Allocate handle area */
     work_ptr = (uint8_t *)SRLAUTILITY_ROUNDUP((uintptr_t)work_ptr, SRLACODER_MEMORY_ALIGNMENT);
     coder = (struct SRLACoder *)work_ptr;
     work_ptr += sizeof(struct SRLACoder);
 
-    /* 符号サンプルバッファ確保 */
+    /* Allocate code sample buffer */
     work_ptr = (uint8_t *)SRLAUTILITY_ROUNDUP((uintptr_t)work_ptr, SRLACODER_MEMORY_ALIGNMENT);
     coder->uval_buffer = (uint32_t *)work_ptr;
     work_ptr += sizeof(uint32_t) * max_num_samples;
 
-    /* ハンドルメンバ設定 */
+    /* Handle member settings */
     coder->alloced_by_own = tmp_alloc_by_own;
     coder->work = work;
 
-    /* 分割情報を初期化 */
+    /* Initialize division information */
     {
         uint32_t i, j;
         for (i = 0; i < SRLACODER_LOG2_MAX_NUM_PARTITIONS + 1; i++) {
@@ -105,18 +105,18 @@ struct SRLACoder* SRLACoder_Create(uint32_t max_num_samples, void *work, int32_t
     return coder;
 }
 
-/* 符号化ハンドルの破棄 */
+/* Destroy the encoding handle */
 void SRLACoder_Destroy(struct SRLACoder *coder)
 {
     if (coder != NULL) {
-        /* 自前確保していたら領域開放 */
+        /* Release the area if you have it yourself */
         if (coder->alloced_by_own == 1) {
             free(coder->work);
         }
     }
 }
 
-/* ガンマ符号の出力 */
+/* Output gamma code */
 static void Gamma_PutCode(struct BitStream *stream, uint32_t val)
 {
     uint32_t ndigit;
@@ -124,20 +124,20 @@ static void Gamma_PutCode(struct BitStream *stream, uint32_t val)
     SRLA_ASSERT(stream != NULL);
 
     if (val == 0) {
-        /* 符号化対象が0ならば1を出力して終了 */
+        /* If the encoding target is 0, output 1 and exit */
         BitWriter_PutBits(stream, 1, 1);
         return;
     }
 
-    /* 桁数を取得 */
+    /* Get the number of digits */
     ndigit = SRLAUTILITY_LOG2CEIL(val + 2);
-    /* 桁数-1だけ0を続ける */
+    /* Continue with 0 for number of digits -1 */
     BitWriter_PutBits(stream, 0, ndigit - 1);
-    /* 桁数を使用して符号語を2進数で出力 */
+    /* Output the codeword in binary using the number of digits */
     BitWriter_PutBits(stream, val + 1, ndigit);
 }
 
-/* ガンマ符号の取得 */
+/* Get gamma code */
 static uint32_t Gamma_GetCode(struct BitStream *stream)
 {
     uint32_t ndigit;
@@ -145,23 +145,23 @@ static uint32_t Gamma_GetCode(struct BitStream *stream)
 
     SRLA_ASSERT(stream != NULL);
 
-    /* 桁数を取得 */
-    /* 1が出現するまで桁数を増加 */
+    /* Get the number of digits */
+    /* Increase the number of digits until a 1 appears */
     BitReader_GetZeroRunLength(stream, &ndigit);
-    /* 最低でも1のため下駄を履かせる */
+    /* At least 1, so we'll make it work */
     ndigit++;
 
-    /* 桁数が1のときは0 */
+    /* 0 if the number of digits is 1 */
     if (ndigit == 1) {
         return 0;
     }
 
-    /* 桁数から符号語を出力 */
+    /* Output code word from digits */
     BitReader_GetBits(stream, &bitsbuf, ndigit - 1);
     return (uint32_t)((1UL << (ndigit - 1)) + bitsbuf - 1);
 }
 
-/* Rice符号の出力 */
+/* Output of Rice code */
 static void Rice_PutCode(struct BitStream *stream, uint32_t k, uint32_t uval)
 {
     SRLA_ASSERT(stream != NULL);
@@ -170,7 +170,7 @@ static void Rice_PutCode(struct BitStream *stream, uint32_t k, uint32_t uval)
     BitWriter_PutBits(stream, uval, k);
 }
 
-/* 再帰的Rice符号の出力 */
+/* Output of recursive Rice code */
 #if defined(SRLACODER_USE_MACROS)
 #define RecursiveRice_PutCode(stream, k1, k2, uval)\
     do {\
@@ -179,10 +179,10 @@ static void Rice_PutCode(struct BitStream *stream, uint32_t k, uint32_t uval)
         SRLA_ASSERT((stream) != NULL);\
         \
         if ((uval) < k1pow__) {\
-            /* 1段目で符号化 */\
+            /* Encoding in the first stage */\
             BitWriter_PutBits((stream), k1pow__ | (uval), (k1) + 1);\
         } else {\
-            /* 1段目のパラメータで引き、2段目のパラメータでRice符号化 */\
+            /* Subtract with the first stage parameters, and Rice encode with the second stage parameters */\
             const uint32_t tmp_uval__ = (uval) - k1pow__;\
             BitWriter_PutZeroRun((stream), 1 + (tmp_uval__ >> (k2)));\
             BitWriter_PutBits((stream), tmp_uval__, (k2));\
@@ -196,10 +196,10 @@ static void RecursiveRice_PutCode(struct BitStream *stream, uint32_t k1, uint32_
     SRLA_ASSERT(stream != NULL);
 
     if (uval < k1pow) {
-        /* 1段目で符号化 */
+        /* Encoding in the first stage */
         BitWriter_PutBits(stream, k1pow | uval, k1 + 1);
     } else {
-        /* 1段目のパラメータで引き、2段目のパラメータでRice符号化 */
+        /* Subtract with the first stage parameters, and Rice encode with the second stage parameters */
         uval -= k1pow;
         BitWriter_PutZeroRun(stream, 1 + (uval >> k2));
         BitWriter_PutBits(stream, uval, k2);
@@ -207,23 +207,23 @@ static void RecursiveRice_PutCode(struct BitStream *stream, uint32_t k1, uint32_
 }
 #endif
 
-/* Rice符号の取得 */
+/* Get Rice code */
 static uint32_t Rice_GetCode(struct BitStream *stream, uint32_t k)
 {
     uint32_t quot, uval;
 
     SRLA_ASSERT(stream != NULL);
 
-    /* 商（alpha符号）の取得 */
+    /* Get the quotient (alpha sign) */
     BitReader_GetZeroRunLength(stream, &quot);
 
-    /* 剰余の取得 */
+    /* Get the remainder */
     BitReader_GetBits(stream, &uval, k);
 
     return (quot << k) + uval;
 }
 
-/* 再帰的Rice符号の取得 */
+/* Get recursive Rice code */
 #if defined(SRLACODER_USE_MACROS)
 #define RecursiveRice_GetCode(stream, k1, k2, uval)\
     do {\
@@ -233,10 +233,10 @@ static uint32_t Rice_GetCode(struct BitStream *stream, uint32_t k)
         SRLA_ASSERT((uval) != NULL);\
         SRLA_ASSERT((k1) == ((k2) + 1));\
         \
-        /* 商部の取得 */\
+        /* Get the business section */\
         BitReader_GetZeroRunLength((stream), &quot__);\
         \
-        /* 剰余部の取得 */\
+        /* Get the remainder */\
         BitReader_GetBits(stream, uval, (k2) + !(quot__));\
         (*uval) |= ((quot__ + !!(quot__)) << (k2));\
     } while (0);
@@ -249,34 +249,34 @@ static void RecursiveRice_GetCode(struct BitStream *stream, uint32_t k1, uint32_
     SRLA_ASSERT(uval != NULL);
     SRLA_ASSERT(k1 == (k2 + 1));
 
-    /* 商部の取得 */
+    /* Get the business section */
     BitReader_GetZeroRunLength(stream, &quot);
 
-    /* 剰余部の取得 */
+    /* Get the remainder */
     BitReader_GetBits(stream, uval, k2 + !(quot));
     (*uval) |= ((quot + !!(quot)) << (k2));
 }
 #endif
 
-/* 最適な符号化パラメータの計算 */
+/* Calculate optimal encoding parameters */
 static void SRLACoder_CalculateOptimalRiceParameter(
     const double mean, uint32_t *optk, double *bits_per_sample)
 {
     uint32_t k;
     double rho, fk, bps;
-#define OPTX 0.5127629514437670454896078808815218508243560791015625 /* (x - 1)^2 + ln(2) x ln(x) = 0 の解 */
+#define OPTX 0.5127629514437670454896078808815218508243560791015625 /* Solution of (x - 1)^2 + ln(2) x ln(x) = 0 */
 
-    /* 幾何分布のパラメータを最尤推定 */
+    /* Maximum likelihood estimation of geometric distribution parameters */
     rho = 1.0 / (1.0 + mean);
 
-    /* 最適なパラメータの計算 */
+    /* Calculate the optimal parameters */
     k = (uint32_t)SRLAUTILITY_MAX(0, SRLAUtility_Round(SRLAUtility_Log2(log(OPTX) / log(1.0 - rho))));
 
-    /* 平均符号長の計算 */
+    /* Calculate the average code length */
     fk = pow(1.0 - rho, (double)(1 << k));
     bps = k + (1.0 / (1.0 - fk));
 
-    /* 結果出力 */
+    /* Result output */
     (*optk) = k;
 
     if (bits_per_sample != NULL) {
@@ -286,7 +286,7 @@ static void SRLACoder_CalculateOptimalRiceParameter(
 #undef OPTX
 }
 
-/* k1に関する偏微分係数の計算 */
+/* Calculate the partial derivative with respect to k1 */
 static double SRLACoder_CalculateMeanCodelength(double rho, uint32_t k1, uint32_t k2)
 {
     const double fk1 = pow(1.0 - rho, (double)(1 << k1));
@@ -295,7 +295,7 @@ static double SRLACoder_CalculateMeanCodelength(double rho, uint32_t k1, uint32_
 }
 
 #if 0
-/* k1に関する偏微分係数の計算 */
+/* Calculate the partial derivative with respect to k1 */
 static double SRLACoder_CalculateDiffk1(double rho, double k1, double k2)
 {
     const double k1pow = pow(2.0, k1);
@@ -306,23 +306,23 @@ static double SRLACoder_CalculateDiffk1(double rho, double k1, double k2)
 }
 #endif
 
-/* 最適な符号化パラメータの計算 */
+/* Calculate optimal encoding parameters */
 static void SRLACoder_CalculateOptimalRecursiveRiceParameter(
     const double mean, uint32_t *optk1, uint32_t *optk2, double *bits_per_sample)
 {
     uint32_t k1, k2;
     double rho;
-#define OPTX 0.5127629514437670454896078808815218508243560791015625 /* (x - 1)^2 + ln(2) x ln(x) = 0 の解 */
+#define OPTX 0.5127629514437670454896078808815218508243560791015625 /* Solution of (x - 1)^2 + ln(2) x ln(x) = 0 */
 
-    /* 幾何分布のパラメータを最尤推定 */
+    /* Maximum likelihood estimation of geometric distribution parameters */
     rho = 1.0 / (1.0 + mean);
 
-    /* 最適なパラメータの計算 */
+    /* Calculate the optimal parameters */
 #if 0
     k2 = (uint32_t)SRLAUTILITY_MAX(0, floor(SRLAUtility_Log2(log(OPTX) / log(1.0 - rho))));
     k1 = k2 + 1;
 #else
-    /* 高速近似計算 */
+    /* Fast approximate calculation */
     {
 #define MLNOPTX (0.66794162356) /* -ln(OPTX) */
         const uint32_t opt_golomb_param = (uint32_t)SRLAUTILITY_MAX(1, MLNOPTX * (1.0 + mean));
@@ -332,8 +332,8 @@ static void SRLACoder_CalculateOptimalRecursiveRiceParameter(
 #endif
 
 #if 0
-    /* k1を2分法で求める */
-    /* note: 一般にk1 = k2 + 1が成り立たなくなり符号化で不利！ */
+    /* Find k1 using bisection */
+    /* Note: In general, k1 = k2 + 1 does not hold, which is disadvantageous for encoding! */
     {
         uint32_t i;
         double k1tmp, d1, d2;
@@ -355,11 +355,11 @@ static void SRLACoder_CalculateOptimalRecursiveRiceParameter(
     }
 #endif
 
-    /* 結果出力 */
+    /* Result output */
     (*optk1) = k1;
     (*optk2) = k2;
 
-    /* 平均符号長の計算 */
+    /* Calculate the average code length */
     if (bits_per_sample != NULL) {
         (*bits_per_sample) = SRLACoder_CalculateMeanCodelength(rho, k1, k2);
     }
@@ -367,13 +367,13 @@ static void SRLACoder_CalculateOptimalRecursiveRiceParameter(
 #undef OPTX
 }
 
-/* Rice符号長の出力 */
+/* Output Rice code length */
 static uint32_t Rice_GetCodeLength(uint32_t k, uint32_t uval)
 {
     return 1 + k  + (uval >> k);
 }
 
-/* 配列に対して再帰的Rice符号長を計算 */
+/* Calculate the recursive Rice code length for an array */
 static uint32_t RecursiveRice_ComputeCodeLength(const uint32_t *data, uint32_t num_samples, uint32_t k1, uint32_t k2)
 {
     uint32_t smpl, length;
@@ -386,10 +386,10 @@ static uint32_t RecursiveRice_ComputeCodeLength(const uint32_t *data, uint32_t n
     for (smpl = 0; smpl < num_samples; smpl++) {
         const uint32_t uval = data[smpl];
         if (uval < k1pow) {
-            /* 1段目で符号化 */
+            /* Encoding in the first stage */
             length += (k1 + 1);
         } else {
-            /* 1段目のパラメータで引き、2段目のパラメータでRice符号化 */
+            /* Subtract with the first stage parameters, and Rice encode with the second stage parameters */
             length += (k2 + 2 + ((uval - k1pow) >> k2));
         }
     }
@@ -412,7 +412,7 @@ static void SRLACoder_SearchBestCodeAndPartition(
     uint32_t porder, part, best_porder, min_bits, smpl, max_uval;
     SRLACoderCodeType tmp_code_type = SRLACODER_CODE_TYPE_INVALID;
 
-    /* 最大分割数の決定 */
+    /* Determine the maximum number of divisions */
     max_porder = 1;
     while ((num_samples % (1 << max_porder)) == 0) {
         max_porder++;
@@ -420,17 +420,17 @@ static void SRLACoder_SearchBestCodeAndPartition(
     max_porder = SRLAUTILITY_MIN(max_porder - 1, SRLACODER_LOG2_MAX_NUM_PARTITIONS);
     max_num_partitions = (1 << max_porder);
 
-    /* 各分割での平均を計算 */
+    /* Calculate the average for each fold */
     {
         int32_t i;
 
-        /* 最も細かい分割時の平均値 */
+        /* Average value at finest division */
         max_uval = 0;
         for (part = 0; part < max_num_partitions; part++) {
             const uint32_t nsmpl = num_samples / max_num_partitions;
             double part_sum = 0.0;
             for (smpl = 0; smpl < nsmpl; smpl++) {
-                /* uint32の変換結果をキャッシュ */
+                /* Cache the uint32 conversion result */
                 const uint32_t uval = SRLAUTILITY_SINT32_TO_UINT32(data[part * nsmpl + smpl]);
                 coder->uval_buffer[part * nsmpl + smpl] = uval;
                 part_sum += uval;
@@ -439,7 +439,7 @@ static void SRLACoder_SearchBestCodeAndPartition(
             coder->part_mean[max_porder][part] = part_sum / nsmpl;
         }
 
-        /* より大きい分割の平均は、小さい分割の平均をマージして計算 */
+        /* The average of the larger partitions is calculated by merging the averages of the smaller partitions */
         for (i = (int32_t)(max_porder - 1); i >= 0; i--) {
             for (part = 0; part < (1U << i); part++) {
                 coder->part_mean[i][part] = (coder->part_mean[i + 1][2 * part] + coder->part_mean[i + 1][2 * part + 1]) / 2.0;
@@ -447,7 +447,7 @@ static void SRLACoder_SearchBestCodeAndPartition(
         }
     }
 
-    /* 全体平均を元に符号を切り替え */
+    /* Switch signs based on overall average */
     if (max_uval == 0) {
         tmp_code_type = SRLACODER_CODE_TYPE_ALLZERO;
     } else if (coder->part_mean[0][0] < 2) {
@@ -456,7 +456,7 @@ static void SRLACoder_SearchBestCodeAndPartition(
         tmp_code_type = SRLACODER_CODE_TYPE_RECURSIVE_RICE;
     }
 
-    /* 各分割での符号長を計算し、最適な分割を探索 */
+    /* Calculate the code length for each division and search for the optimal division */
     min_bits = UINT32_MAX;
     best_porder = max_porder + 1;
 
@@ -484,7 +484,7 @@ static void SRLACoder_SearchBestCodeAndPartition(
                     bits += udiff + 1;
                 }
                 prevk = k;
-                /* 途中で最小値を超えていたら終わり */
+                /* If the minimum value is exceeded along the way, stop */
                 if (bits >= min_bits) {
                     break;
                 }
@@ -513,7 +513,7 @@ static void SRLACoder_SearchBestCodeAndPartition(
                     bits += udiff + 1;
                 }
                 prevk2 = k2;
-                /* 途中で最小値を超えていたら終わり */
+                /* If the minimum value is exceeded along the way, stop */
                 if (bits >= min_bits) {
                     break;
                 }
@@ -531,16 +531,16 @@ static void SRLACoder_SearchBestCodeAndPartition(
 
     SRLA_ASSERT(best_porder != (max_porder + 1));
 
-    /* 符号タイプの領域を加算 */
+    /* Add signed type fields */
     min_bits += 2;
 
-    /* 結果を記録 */
+    /* Record the result */
     (*code_type) = tmp_code_type;
     (*best_partition_order) = best_porder;
     (*best_code_length) = min_bits;
 }
 
-/* データ配列の再帰的Golomb--Rice符号化 */
+/* Recursive Golomb--Rice encoding of data arrays */
 static void SRLACoder_EncodeRecursiveRice(
     struct BitStream *stream, uint32_t *data, uint32_t num_samples, const uint32_t k1, const uint32_t k2)
 {
@@ -548,7 +548,7 @@ static void SRLACoder_EncodeRecursiveRice(
     SRLA_ASSERT(data != NULL);
     SRLA_ASSERT(k1 == (k2 + 1));
 
-    /* 特定のk2パラメータのときのデコード処理を定義 */
+    /* Define the decoding process for specific k2 parameters */
 #define DEFINE_ENCODING_PROCEDURE_CASE(k2_param, stream, data, num_samples)\
     case (k2_param):\
         {\
@@ -559,7 +559,7 @@ static void SRLACoder_EncodeRecursiveRice(
         }\
         break;
 
-    /* パラメータで場合分け */
+    /* Case distinction by parameters */
     switch (k2) {
         DEFINE_ENCODING_PROCEDURE_CASE(  0, stream, data, num_samples);
         DEFINE_ENCODING_PROCEDURE_CASE(  1, stream, data, num_samples);
@@ -586,17 +586,17 @@ static void SRLACoder_EncodeRecursiveRice(
     }
 }
 
-/* 符号付き整数配列の符号化 */
+/* Encoding a signed integer array */
 static void SRLACoder_EncodePartitionedRecursiveRice(struct SRLACoder *coder, struct BitStream *stream, const int32_t *data, uint32_t num_samples)
 {
     uint32_t part, best_porder, smpl, min_bits;
     SRLACoderCodeType code_type;
 
-    /* 最適な符号と分割のサーチ */
+    /* Search for optimal code and partition */
     SRLACoder_SearchBestCodeAndPartition(
         coder, data, num_samples, &code_type, &best_porder, &min_bits);
 
-    /* 最適な分割を用いて符号化 */
+    /* Encode using optimal partitioning */
     {
         SRLA_ASSERT(code_type != SRLACODER_CODE_TYPE_INVALID);
         BitWriter_PutBits(stream, code_type, 2);
@@ -652,7 +652,7 @@ static void SRLACoder_EncodePartitionedRecursiveRice(struct SRLACoder *coder, st
     }
 }
 
-/* データ配列の再帰的Golomb--Rice復号 */
+/* Recursive Golomb--Rice decoding of data arrays */
 static void SRLACoder_DecodeRecursiveRice(
     struct BitStream *stream, int32_t *data, uint32_t num_samples, const uint32_t k1, const uint32_t k2)
 {
@@ -660,7 +660,7 @@ static void SRLACoder_DecodeRecursiveRice(
     SRLA_ASSERT(data != NULL);
     SRLA_ASSERT(k1 == (k2 + 1));
 
-    /* 特定のk2パラメータのときのデコード処理を定義 */
+    /* Define the decoding process for specific k2 parameters */
 #define DEFINE_DECODING_PROCEDURE_CASE(k2_param, stream, data, num_samples)\
     case (k2_param):\
         {\
@@ -672,7 +672,7 @@ static void SRLACoder_DecodeRecursiveRice(
         }\
         break;
 
-    /* パラメータで場合分け */
+    /* Case distinction by parameters */
     switch (k2) {
         DEFINE_DECODING_PROCEDURE_CASE(  0, stream, data, num_samples);
         DEFINE_DECODING_PROCEDURE_CASE(  1, stream, data, num_samples);
@@ -700,7 +700,7 @@ static void SRLACoder_DecodeRecursiveRice(
     }
 }
 
-/* 符号付き整数配列の復号 */
+/* Decode signed integer array */
 static void SRLACoder_DecodePartitionedRecursiveRice(struct BitStream *stream, int32_t *data, uint32_t num_samples)
 {
     uint32_t smpl, part, nsmpl, best_porder;
@@ -755,7 +755,7 @@ static void SRLACoder_DecodePartitionedRecursiveRice(struct BitStream *stream, i
     }
 }
 
-/* 符号長計算 */
+/* Code length calculation */
 uint32_t SRLACoder_ComputeCodeLength(struct SRLACoder *coder, const int32_t *data, uint32_t num_samples)
 {
     uint32_t dummy_best_porder, min_bits;
@@ -764,14 +764,14 @@ uint32_t SRLACoder_ComputeCodeLength(struct SRLACoder *coder, const int32_t *dat
     SRLA_ASSERT((data != NULL) && (coder != NULL));
     SRLA_ASSERT(num_samples != 0);
 
-    /* 最適な符号と分割のサーチ */
+    /* Search for optimal code and partition */
     SRLACoder_SearchBestCodeAndPartition(
         coder, data, num_samples, &dummy_code_type, &dummy_best_porder, &min_bits);
 
     return min_bits;
 }
 
-/* 符号付き整数配列の符号化 */
+/* Encoding a signed integer array */
 void SRLACoder_Encode(struct SRLACoder *coder, struct BitStream *stream, const int32_t *data, uint32_t num_samples)
 {
     SRLA_ASSERT((stream != NULL) && (data != NULL) && (coder != NULL));
@@ -780,7 +780,7 @@ void SRLACoder_Encode(struct SRLACoder *coder, struct BitStream *stream, const i
     SRLACoder_EncodePartitionedRecursiveRice(coder, stream, data, num_samples);
 }
 
-/* 符号付き整数配列の復号 */
+/* Decode signed integer array */
 void SRLACoder_Decode(struct BitStream *stream, int32_t *data, uint32_t num_samples)
 {
     SRLA_ASSERT((stream != NULL) && (data != NULL));

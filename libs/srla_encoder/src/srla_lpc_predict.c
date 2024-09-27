@@ -3,7 +3,7 @@
 #include <string.h>
 #include "srla_internal.h"
 
-/* LPC係数により予測/誤差出力 */
+/* Prediction/error output by LPC coefficients */
 #if defined(SRLA_USE_SSE41)
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -18,16 +18,16 @@ void SRLALPC_Predict(
 {
     int32_t smpl, ord;
     int32_t predict;
-    const int32_t half = 1 << (coef_rshift - 1); /* 固定小数の0.5 */
+    const int32_t half = 1 << (coef_rshift - 1); /* fixed decimal 0.5 */
 
-    /* 引数チェック */
+    /* Argument check */
     SRLA_ASSERT(data != NULL);
     SRLA_ASSERT(coef != NULL);
     SRLA_ASSERT(residual != NULL);
 
     memcpy(residual, data, sizeof(int32_t) * num_samples);
 
-    /* 先頭係数次数分を前値予測 */
+    /* Predict the leading coefficient order */
     for (smpl = 1; smpl < coef_order; smpl++) {
         residual[smpl] = data[smpl] - data[smpl - 1];
     }
@@ -35,20 +35,22 @@ void SRLALPC_Predict(
     if (coef_order >= 4) {
         uint32_t i;
         __m128i vcoef[SRLA_MAX_COEFFICIENT_ORDER];
-        /* 係数をベクトル化 */
+        /* Vectorize the coefficients */
         for (i = 0; i < coef_order; i++) {
             vcoef[i] = _mm_set1_epi32(coef[i]);
         }
         for (; smpl < num_samples - coef_order - 4; smpl += 4) {
-            /* 4サンプル並列に処理
-            int32_t predict[4] = { half, half, half, half }
-            for (ord = 0; ord < coef_order - 3; ord++) {
-                predict[0] += (coef[ord] * data[smpl - coef_order + ord + 0]);
-                predict[1] += (coef[ord] * data[smpl - coef_order + ord + 1]);
-                predict[2] += (coef[ord] * data[smpl - coef_order + ord + 2]);
-                predict[3] += (coef[ord] * data[smpl - coef_order + ord + 3]);
-            }
-            */
+            /*
+/* Process 4 samples in parallel
+int32_t predict[4] = { half, half, half, half }
+for (ord = 0; ord < coef_order - 3; ord++) {
+predict[0] += (coef[ord] * data[smpl - coef_order + ord + 0]);
+predict[1] += (coef[ord] * data[smpl - coef_order + ord + 1]);
+predict[2] += (coef[ord] * data[smpl - coef_order + ord + 2]);
+predict[3] += (coef[ord] * data[smpl - coef_order + ord + 3]);
+}
+*/
+*/
             DECLALIGN(16) int32_t predict[4];
             __m128i vdata;
             __m128i vpred = _mm_set1_epi32(half);
@@ -70,25 +72,17 @@ void SRLALPC_Predict(
             _mm_store_si128((__m128i *)predict, vpred);
 
             /* ord = coef_order - 3 */
-            /* data[smpl + 0] .. data[smpl + 2]に依存関係があるため処理
-            * TODO: ここもSSEでやり切ってdataに結果を直接storeしたい
-            predict[0] += (coef[ord + 0] * data[smpl - 3 + 0]);
-            predict[0] += (coef[ord + 1] * data[smpl - 3 + 1]);
-            predict[0] += (coef[ord + 2] * data[smpl - 3 + 2]);
-            data[smpl + 0] += (predict[0] >> coef_rshift);
-            predict[1] += (coef[ord + 0] * data[smpl - 3 + 1]);
-            predict[1] += (coef[ord + 1] * data[smpl - 3 + 2]);
-            predict[1] += (coef[ord + 2] * data[smpl - 3 + 3]);
-            data[smpl + 1] += (predict[1] >> coef_rshift);
-            predict[2] += (coef[ord + 0] * data[smpl - 3 + 2]);
-            predict[2] += (coef[ord + 1] * data[smpl - 3 + 3]);
-            predict[2] += (coef[ord + 2] * data[smpl - 3 + 4]);
-            data[smpl + 2] += (predict[2] >> coef_rshift);
-            predict[3] += (coef[ord + 0] * data[smpl - 3 + 3]);
-            predict[3] += (coef[ord + 1] * data[smpl - 3 + 4]);
-            predict[3] += (coef[ord + 2] * data[smpl - 3 + 5]);
-            data[smpl + 3] += (predict[3] >> coef_rshift);
-            */
+            /*
+/* Processing because there is a dependency between data[smpl + 0] .. data[smpl + 2]
+* TODO: I want to do this with SSE as well and store the results directly in data
+predict[0] += (coef[ord + 0] * data[smpl - 3 + 0]);
+predict[0] += (coef[ord + 1] * data[smpl - 3 + 1]);
+predict[0] += (coef[ord + 2] * data[smpl - 3 + 2]);
+data[smpl + 0] += (predict[0] >> coef_rshift);
+predict[1] += (coef[ord + 0] * data[smpl - 3 + 1]);
+predict[1] += (coef[ord + 1] * data[smpl - 3 + 2]);
+predict[1] += (coef[ord + 2] * data[smpl - 3 + 3]); data[smpl + 1] += (predict[1] >> coef_rshift); predict[2] += (coef[ord + 0] * data[smpl - 3 + 2]); predict[2] += (coef[ord + 1] * data[smpl - 3 + 3]); predict[2] += (coef[ord + 2] * data[smpl - 3 + 4]); data[smpl + 2] += (predict[2] >> coef_rshift); predict[3] += (coef[ord + 0] * data[smpl - 3 + 3]); predict[3] += (coef[ord + 1] * data[smpl - 3 + 4]); predict[3] += (coef[ord + 2] * data[smpl - 3 + 5]); data[smpl + 3] += (predict[3] >> coef_rshift); */
+*/
             for (i = 0; i < 4; i++) {
                 predict[i] += (coef[ord + 0] * data[smpl - 3 + i + 0]);
                 predict[i] += (coef[ord + 1] * data[smpl - 3 + i + 1]);
@@ -98,7 +92,7 @@ void SRLALPC_Predict(
         }
     }
 
-    /* 余ったサンプル分の処理 */
+    /* Processing the remaining samples */
     for (; smpl < num_samples; smpl++) {
         int32_t predict = half;
         for (ord = 0; ord < coef_order; ord++) {
@@ -121,16 +115,16 @@ void SRLALPC_Predict(
 {
     int32_t smpl, ord;
     int32_t predict;
-    const int32_t half = 1 << (coef_rshift - 1); /* 固定小数の0.5 */
+    const int32_t half = 1 << (coef_rshift - 1); /* fixed decimal 0.5 */
 
-    /* 引数チェック */
+    /* Argument check */
     SRLA_ASSERT(data != NULL);
     SRLA_ASSERT(coef != NULL);
     SRLA_ASSERT(residual != NULL);
 
     memcpy(residual, data, sizeof(int32_t) * num_samples);
 
-    /* 先頭係数次数分を前値予測 */
+    /* Predict the leading coefficient order */
     for (smpl = 1; smpl < coef_order; smpl++) {
         residual[smpl] = data[smpl] - data[smpl - 1];
     }
@@ -138,12 +132,12 @@ void SRLALPC_Predict(
     if (coef_order >= 8) {
         uint32_t i;
         __m256i vcoef[SRLA_MAX_COEFFICIENT_ORDER];
-        /* 係数をベクトル化 */
+        /* Vectorize the coefficients */
         for (i = 0; i < coef_order; i++) {
             vcoef[i] = _mm256_set1_epi32(coef[i]);
         }
         for (; smpl < num_samples - coef_order - 8; smpl += 8) {
-            /* 8サンプル並列に処理 */
+            /* Process 8 samples in parallel */
             DECLALIGN(32) int32_t predict[8];
             __m256i vdata;
             __m256i vpred = _mm256_set1_epi32(half);
@@ -187,12 +181,12 @@ void SRLALPC_Predict(
     } else if (coef_order >= 4) {
         uint32_t i;
         __m128i vcoef[SRLA_MAX_COEFFICIENT_ORDER];
-        /* 係数をベクトル化 */
+        /* Vectorize the coefficients */
         for (i = 0; i < coef_order; i++) {
             vcoef[i] = _mm_set1_epi32(coef[i]);
         }
         for (; smpl < num_samples - coef_order - 4; smpl += 4) {
-            /* 4サンプル並列に処理 */
+            /* Process 4 samples in parallel */
             DECLALIGN(16) int32_t predict[4];
             __m128i vdata;
             __m128i vpred = _mm_set1_epi32(half);
@@ -223,7 +217,7 @@ void SRLALPC_Predict(
         }
     }
 
-    /* 余ったサンプル分の処理 */
+    /* Processing the remaining samples */
     for (; smpl < num_samples; smpl++) {
         int32_t predict = half;
         for (ord = 0; ord < coef_order; ord++) {
@@ -239,21 +233,21 @@ void SRLALPC_Predict(
 {
     uint32_t smpl, ord;
     int32_t predict;
-    const int32_t half = 1 << (coef_rshift - 1); /* 固定小数の0.5 */
+    const int32_t half = 1 << (coef_rshift - 1); /* fixed decimal 0.5 */
 
-    /* 引数チェック */
+    /* Argument check */
     SRLA_ASSERT(data != NULL);
     SRLA_ASSERT(coef != NULL);
     SRLA_ASSERT(residual != NULL);
 
     memcpy(residual, data, sizeof(int32_t) * num_samples);
 
-    /* 先頭係数次数分を前値予測 */
+    /* Predict the leading coefficient order */
     for (smpl = 1; smpl < coef_order; smpl++) {
         residual[smpl] = data[smpl] - data[smpl - 1];
     }
 
-    /* 予測 */
+    /* prediction */
     for (smpl = 0; smpl < num_samples - coef_order; smpl++) {
         predict = half;
         for (ord = 0; ord < coef_order; ord++) {

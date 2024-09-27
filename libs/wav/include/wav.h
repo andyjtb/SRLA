@@ -3,59 +3,59 @@
 
 #include <stdint.h>
 
-/* PCM型 - ファイルのビット深度如何によらず、メモリ上では全て符号付き32bitで取り扱う */
+/* PCM type - Regardless of the bit depth of the file, all data is handled in memory as signed 32-bit data. */
 typedef int32_t WAVPcmData;
 
-/* WAVデータのフォーマット */
+/* WAV data format */
 typedef enum WAVDataFormatTag {
-    WAV_DATA_FORMAT_PCM             /* PCMのみ対応 */
+    WAV_DATA_FORMAT_PCM             /* PCM only */
 } WAVDataFormat;
 
-/* API結果型 */
+/* API result type */
 typedef enum WAVApiResultTag {
     WAV_APIRESULT_OK = 0,
     WAV_APIRESULT_NG,
-    WAV_APIRESULT_INVALID_FORMAT,     /* フォーマットが不正 */
-    WAV_APIRESULT_IOERROR,            /* ファイル入出力エラー */
-    WAV_APIRESULT_INVALID_PARAMETER   /* 引数が不正 */
+    WAV_APIRESULT_INVALID_FORMAT,     /* Invalid format */
+    WAV_APIRESULT_IOERROR,            /* File I/O error */
+    WAV_APIRESULT_INVALID_PARAMETER   /* invalid argument */
 } WAVApiResult;
 
-/* WAVファイルフォーマット */
+/* WAV file format */
 struct WAVFileFormat {
-    WAVDataFormat data_format;      /* データフォーマット */
-    uint32_t      num_channels;     /* チャンネル数 */
-    uint32_t      sampling_rate;    /* サンプリングレート */
-    uint32_t      bits_per_sample;  /* 量子化ビット数 */
-    uint32_t      num_samples;      /* サンプル数 */
+    WAVDataFormat data_format;      /* Data format */
+    uint32_t      num_channels;     /* Number of channels */
+    uint32_t      sampling_rate;    /* Sampling rate */
+    uint32_t      bits_per_sample;  /* Quantization bit rate */
+    uint32_t      num_samples;      /* Number of samples */
 };
 
-/* WAVファイルハンドル */
+/* WAV file handle */
 struct WAVFile {
-    struct WAVFileFormat  format;   /* フォーマット */
-    WAVPcmData**          data;     /* 実データ     */
+    struct WAVFileFormat  format;   /* Format */
+    WAVPcmData**          data;     /* Actual data */
 };
 
-/* アクセサ */
+/* accessor */
 #define WAVFile_PCM(wavfile, samp, ch)  (wavfile->data[(ch)][(samp)])
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ファイルからWAVファイルハンドルを作成 */
+/* Create a WAV file handle from the file */
 struct WAVFile* WAV_CreateFromFile(const char* filename);
 
-/* フォーマットを指定して新規にWAVファイルハンドルを作成 */
+/* Create a new WAV file handle with the specified format */
 struct WAVFile* WAV_Create(const struct WAVFileFormat* format);
 
-/* WAVファイルハンドルを破棄 */
+/* Discard the WAV file handle */
 void WAV_Destroy(struct WAVFile* wavfile);
 
-/* ファイル書き出し */
+/* Write file */
 WAVApiResult WAV_WriteToFile(
         const char* filename, const struct WAVFile* wavfile);
 
-/* ファイルからWAVファイルフォーマットだけ読み取り */
+/* Read only WAV file formats from file */
 WAVApiResult WAV_GetWAVFormatFromFile(
         const char* filename, struct WAVFileFormat* format);
 

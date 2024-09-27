@@ -4,7 +4,7 @@
 #include <string.h>
 #include <assert.h>
 
-/* C89環境でビルドするためinlineキーワードを無効にする */
+/* Disable the inline keyword to build in a C89 environment */
 #define inline
 #include <pulse/simple.h>
 #include <pulse/error.h>
@@ -13,20 +13,20 @@
 #define BUFFER_SIZE (1 * 1024)
 #define DECODE_BUFFER_NUM_SAMPLES (1024)
 
-/* 初期化カウント */
+/* Initialize count */
 static int32_t st_initialize_count = 0;
-/* 初期化時のプレイヤーコンフィグ */
+/* Player config at initialization */
 static struct SRLAPlayerConfig st_config = { 0, };
-/* デコードしたデータのバッファ領域 */
+/* Buffer area for decoded data */
 static int32_t **st_decode_buffer = NULL;
-/* バッファ参照位置 */
-static uint32_t st_buffer_pos = DECODE_BUFFER_NUM_SAMPLES; /* 空の状態 */
-/* simple pulseaudio ハンドル */
+/* Buffer reference position */
+static uint32_t st_buffer_pos = DECODE_BUFFER_NUM_SAMPLES; /* Empty state */
+/* simple pulseaudio handle */
 static pa_simple *pa_simple_hn = NULL;
-/* バッファ領域 */
+/* Buffer area */
 static uint8_t buffer[BUFFER_SIZE];
 
-/* 初期化 この関数内でデバイスドライバの初期化を行い、再生開始 */
+/* Initialization This function initializes the device driver and starts playback. */
 void SRLAPlayer_Initialize(const struct SRLAPlayerConfig *config)
 {
     uint32_t i;
@@ -35,27 +35,27 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig *config)
 
     assert(config != NULL);
 
-    /* 多重初期化は不可 */
+    /* Multiple initialization is not possible */
     if (st_initialize_count > 0) {
         return;
     }
 
-    /* コンフィグ取得 */
+    /* Get config */
     st_config = (*config);
 
-    /* フォーマットに属性を詰める */
+    /* Fill the format with attributes */
     sample_spec.format = PA_SAMPLE_S16LE;
     sample_spec.rate = st_config.sampling_rate;
     sample_spec.channels = (uint8_t)st_config.num_channels;
 
-    /* デコード領域のバッファ確保 */
+    /* Allocate buffer for decoding area */
     st_decode_buffer = (int32_t **)malloc(sizeof(int32_t *) * st_config.num_channels);
     for (i = 0; i < st_config.num_channels; i++) {
         st_decode_buffer[i] = (int32_t *)malloc(sizeof(int32_t) * DECODE_BUFFER_NUM_SAMPLES);
         memset(st_decode_buffer[i], 0, sizeof(int32_t) * DECODE_BUFFER_NUM_SAMPLES);
     }
 
-    /* playbackハンドル作成 */
+    /* Create playback handle */
     if ((pa_simple_hn = pa_simple_new(NULL, "SRLAPlayer", PA_STREAM_PLAYBACK, NULL, "playback",
                     &sample_spec, NULL, NULL, &error)) == NULL) {
         fprintf(stderr, "failed to create pulseaudio playback: %s \n", pa_strerror(error));
@@ -70,12 +70,12 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig *config)
         const uint32_t num_writable_samples_per_channel = (uint32_t)(BUFFER_SIZE / (st_config.num_channels * sizeof(int16_t)));
 
         for (i = 0; i < num_writable_samples_per_channel; i++) {
-            /* バッファを使い切っていたらその場で次のデータを要求 */
+            /* If the buffer is full, request the next data immediately */
             if (st_buffer_pos >= DECODE_BUFFER_NUM_SAMPLES) {
                 st_config.sample_request_callback(st_decode_buffer, st_config.num_channels, DECODE_BUFFER_NUM_SAMPLES);
                 st_buffer_pos = 0;
             }
-            /* インターリーブしたバッファにデータを詰める */
+            /* Fill the interleaved buffer with data */
             for (ch = 0; ch < st_config.num_channels; ch++) {
                 *pbuffer++ = (int16_t)st_decode_buffer[ch][st_buffer_pos];
             }
@@ -89,7 +89,7 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig *config)
     }
 }
 
-/* 終了 初期化したときのリソースの開放はここで */
+/* End. Release the initialized resources here. */
 void SRLAPlayer_Finalize(void)
 {
     if (st_initialize_count == 1) {
@@ -97,7 +97,7 @@ void SRLAPlayer_Finalize(void)
 
         pa_simple_free(pa_simple_hn);
 
-        /* デコード領域のバッファ開放 */
+        /* Free the buffer for the decoding area */
         for (i = 0; i < st_config.num_channels; i++) {
             free(st_decode_buffer[i]);
         }

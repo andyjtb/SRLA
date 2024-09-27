@@ -8,25 +8,25 @@
 #include <string.h>
 #include <sys/stat.h>
 
-/* デフォルトプリセット */
+/* Default preset */
 #define DEFALUT_PRESET_INDEX 2
-/* デフォルトの最大ブロックサンプル数 */
+/* Default maximum block samples */
 #define DEFALUT_MAX_NUM_BLOCK_SAMPLES 4096
-/* デフォルトの可変ブロック分割数 */
+/* Default variable block division number */
 #define DEFALUT_NUM_VARIABLE_BLOCK_DIVISIONS 1
-/* パラメータプリセットの最大インデックス */
+/* Maximum index of parameter preset */
 #define SRLA_MAX_PARAMETER_PRESETS_INDEX 4
 #if SRLA_MAX_PARAMETER_PRESETS_INDEX != (SRLA_NUM_PARAMETER_PRESETS - 1)
 #error "Max parameter presets mismatched to number of parameter presets!"
 #endif
-/* マクロの内容を文字列化 */
+/* Convert the macro content to a string */
 #define PRE_TOSTRING(arg) #arg
 #define TOSTRING(arg) PRE_TOSTRING(arg)
 
-/* a, bのうち小さい方を選択 */
+/* Select the smaller of a and b */
 #define SRLACODEC_MIN(a, b) (((a) < (b)) ? (a) : (b))
 
-/* コマンドライン仕様 */
+/* Command line specification */
 static struct CommandLineParserSpecification command_line_spec[] = {
     { 'e', "encode", "Encode mode",
         COMMAND_LINE_PARSER_FALSE, NULL, COMMAND_LINE_PARSER_FALSE },
@@ -47,7 +47,7 @@ static struct CommandLineParserSpecification command_line_spec[] = {
     { 0, }
 };
 
-/* エンコード 成功時は0、失敗時は0以外を返す */
+/* Encode returns 0 on success, non-zero on failure */
 static int do_encode(const char *in_filename, const char *out_filename,
     uint32_t encode_preset_no, uint32_t max_num_block_samples, uint32_t variable_block_num_divisions)
 {
@@ -65,7 +65,7 @@ static int do_encode(const char *in_filename, const char *out_filename,
         const int32_t* const* input, uint32_t num_samples,
         uint8_t * data, uint32_t data_size, uint32_t * output_size);
 
-    /* エンコーダ作成 */
+    /* Create the encoder */
     config.max_num_channels = SRLA_MAX_NUM_CHANNELS;
     config.min_num_samples_per_block = max_num_block_samples >> variable_block_num_divisions;
     config.max_num_samples_per_block = max_num_block_samples;
@@ -75,7 +75,7 @@ static int do_encode(const char *in_filename, const char *out_filename,
         return 1;
     }
 
-    /* WAVファイルオープン */
+    /* Open WAV file */
     if ((in_wav = WAV_CreateFromFile(in_filename)) == NULL) {
         fprintf(stderr, "Failed to open %s. \n", in_filename);
         return 1;
@@ -83,31 +83,31 @@ static int do_encode(const char *in_filename, const char *out_filename,
     num_channels = in_wav->format.num_channels;
     num_samples = in_wav->format.num_samples;
 
-    /* エンコードパラメータセット */
+    /* Encoding parameter set */
     parameter.num_channels = (uint16_t)num_channels;
     parameter.bits_per_sample = (uint16_t)in_wav->format.bits_per_sample;
     parameter.sampling_rate = in_wav->format.sampling_rate;
     parameter.min_num_samples_per_block = max_num_block_samples >> variable_block_num_divisions;
     parameter.max_num_samples_per_block = max_num_block_samples;
-    /* プリセットの反映 */
+    /* Reflecting presets */
     parameter.preset = (uint8_t)encode_preset_no;
     if ((ret = SRLAEncoder_SetEncodeParameter(encoder, &parameter)) != SRLA_APIRESULT_OK) {
         fprintf(stderr, "Failed to set encode parameter: %d \n", ret);
         return 1;
     }
 
-    /* 入力ファイルのサイズを拾っておく */
+    /* Keep track of the size of the input file */
     stat(in_filename, &fstat);
-    /* 入力wavの2倍よりは大きくならないだろうという想定 */
+    /* Assuming it will not be larger than twice the input wav size */
     buffer_size = (uint32_t)(2 * fstat.st_size);
 
-    /* エンコードデータ領域を作成 */
+    /* Create the encoded data area */
     buffer = (uint8_t *)malloc(buffer_size);
 
-    /* エンコード関数の選択 */
+    /* Select the encoding function */
     encode_function = (variable_block_num_divisions == 0) ? SRLAEncoder_EncodeBlock : SRLAEncoder_EncodeOptimalPartitionedBlock;
 
-    /* エンコード実行 */
+    /* Execute encoding */
     {
         uint8_t *data_pos = buffer;
         uint32_t write_offset, progress;
@@ -115,7 +115,7 @@ static int do_encode(const char *in_filename, const char *out_filename,
 
         write_offset = 0;
 
-        /* ヘッダエンコード */
+        /* Header encoding */
         header.num_channels = (uint16_t)num_channels;
         header.num_samples = num_samples;
         header.sampling_rate = parameter.sampling_rate;
@@ -130,20 +130,20 @@ static int do_encode(const char *in_filename, const char *out_filename,
         data_pos += SRLA_HEADER_SIZE;
         write_offset += SRLA_HEADER_SIZE;
 
-        /* ブロックを時系列順にエンコード */
+        /* Encode blocks in chronological order */
         progress = 0;
         while (progress < num_samples) {
             uint32_t ch, write_size;
             const int32_t *input_ptr[SRLA_MAX_NUM_CHANNELS];
-            /* エンコードサンプル数の確定 */
+            /* Determine the number of samples to encode */
             const uint32_t num_encode_samples = SRLACODEC_MIN(max_num_block_samples, num_samples - progress);
 
-            /* サンプル参照位置のセット */
+            /* Set sample reference position */
             for (ch = 0; ch < (uint32_t)num_channels; ch++) {
                 input_ptr[ch] = &(WAVFile_PCM(in_wav, progress, ch));
             }
 
-            /* ブロックエンコード */
+            /* Block encoding */
             if ((ret = encode_function(encoder,
                     input_ptr, num_encode_samples,
                     data_pos, buffer_size - write_offset, &write_size)) != SRLA_APIRESULT_OK) {
@@ -151,32 +151,32 @@ static int do_encode(const char *in_filename, const char *out_filename,
                 return 1;
             }
 
-            /* 進捗更新 */
+            /* Progress update */
             data_pos += write_size;
             write_offset += write_size;
             progress += num_encode_samples;
 
-            /* 進捗表示 */
+            /* Progress display */
             printf("progress... %5.2f%% \r", (double)((progress * 100.0) / num_samples));
             fflush(stdout);
         }
 
-        /* 書き出しサイズ取得 */
+        /* Get write size */
         encoded_data_size = write_offset;
     }
 
-    /* ファイル書き出し */
+    /* Write file */
     out_fp = fopen(out_filename, "wb");
     if (fwrite(buffer, sizeof(uint8_t), encoded_data_size, out_fp) < encoded_data_size) {
         fprintf(stderr, "File output error! %d \n", ret);
         return 1;
     }
 
-    /* 圧縮結果サマリの表示 */
+    /* Display compression result summary */
     printf("finished: %d -> %d (%6.2f %%) \n",
             (uint32_t)fstat.st_size, encoded_data_size, (double)((100.0 * encoded_data_size) / (double)fstat.st_size));
 
-    /* リソース破棄 */
+    /* Dispose of resources */
     fclose(out_fp);
     free(buffer);
     WAV_Destroy(in_wav);
@@ -185,7 +185,7 @@ static int do_encode(const char *in_filename, const char *out_filename,
     return 0;
 }
 
-/* デコード 成功時は0、失敗時は0以外を返す */
+/* Returns 0 on success, non-zero on failure */
 static int do_decode(const char *in_filename, const char *out_filename, uint8_t check_checksum)
 {
     FILE* in_fp;
@@ -199,7 +199,7 @@ static int do_decode(const char *in_filename, const char *out_filename, uint8_t 
     uint32_t ch, smpl, buffer_size;
     SRLAApiResult ret;
 
-    /* デコーダハンドルの作成 */
+    /* Create a decoder handle */
     config.max_num_channels = SRLA_MAX_NUM_CHANNELS;
     config.max_num_parameters = SRLA_MAX_COEFFICIENT_ORDER;
     config.check_checksum = check_checksum;
@@ -208,24 +208,24 @@ static int do_decode(const char *in_filename, const char *out_filename, uint8_t 
         return 1;
     }
 
-    /* 入力ファイルオープン */
+    /* Open input file */
     in_fp = fopen(in_filename, "rb");
-    /* 入力ファイルのサイズ取得 / バッファ領域割り当て */
+    /* Get input file size / Allocate buffer space */
     stat(in_filename, &fstat);
     buffer_size = (uint32_t)fstat.st_size;
     buffer = (uint8_t *)malloc(buffer_size);
-    /* バッファ領域にデータをロード */
+    /* Load data into the buffer area */
     fread(buffer, sizeof(uint8_t), buffer_size, in_fp);
     fclose(in_fp);
 
-    /* ヘッダデコード */
+    /* Header decode */
     if ((ret = SRLADecoder_DecodeHeader(buffer, buffer_size, &header))
             != SRLA_APIRESULT_OK) {
         fprintf(stderr, "Failed to get header information: %d \n", ret);
         return 1;
     }
 
-    /* 出力wavハンドルの生成 */
+    /* Generate output wav handle */
     wav_format.data_format     = WAV_DATA_FORMAT_PCM;
     wav_format.num_channels    = header.num_channels;
     wav_format.sampling_rate   = header.sampling_rate;
@@ -236,7 +236,7 @@ static int do_decode(const char *in_filename, const char *out_filename, uint8_t 
         return 1;
     }
 
-    /* 一括デコード */
+    /* Bulk decode */
     if ((ret = SRLADecoder_DecodeWhole(decoder,
                     buffer, buffer_size,
                     (int32_t **)out_wav->data, out_wav->format.num_channels, out_wav->format.num_samples))
@@ -245,7 +245,7 @@ static int do_decode(const char *in_filename, const char *out_filename, uint8_t 
         return 1;
     }
 
-    /* WAVファイル書き出し */
+    /* Export WAV file */
     if (WAV_WriteToFile(out_filename, out_wav) != WAV_APIRESULT_OK) {
         fprintf(stderr, "Failed to write wav file. \n");
         return 1;
@@ -258,41 +258,41 @@ static int do_decode(const char *in_filename, const char *out_filename, uint8_t 
     return 0;
 }
 
-/* 使用法の表示 */
+/* Show usage */
 static void print_usage(char** argv)
 {
     printf("Usage: %s [options] INPUT_FILE_NAME OUTPUT_FILE_NAME \n", argv[0]);
 }
 
-/* バージョン情報の表示 */
+/* Display version information */
 static void print_version_info(void)
 {
     printf("SRLA -- SVR-FIR Lossless Audio codec Version.%d \n", SRLA_CODEC_VERSION);
 }
 
-/* メインエントリ */
+/* Main entry */
 int main(int argc, char** argv)
 {
     const char *filename_ptr[2] = { NULL, NULL };
     const char *input_file;
     const char *output_file;
 
-    /* 引数が足らない */
+    /* Not enough arguments */
     if (argc == 1) {
         print_usage(argv);
-        /* 初めて使った人が詰まらないようにヘルプの表示を促す */
+        /* Prompts users to display help so that first-time users don't get stuck */
         printf("Type `%s -h` to display command helps. \n", argv[0]);
         return 1;
     }
 
-    /* コマンドライン解析 */
+    /* Command line parsing */
     if (CommandLineParser_ParseArguments(command_line_spec,
                 argc, (const char *const *)argv, filename_ptr, sizeof(filename_ptr) / sizeof(filename_ptr[0]))
             != COMMAND_LINE_PARSER_RESULT_OK) {
         return 1;
     }
 
-    /* ヘルプやバージョン情報の表示判定 */
+    /* Determine whether help or version information is displayed */
     if (CommandLineParser_GetOptionAcquired(command_line_spec, "help") == COMMAND_LINE_PARSER_TRUE) {
         print_usage(argv);
         printf("options: \n");
@@ -303,19 +303,19 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    /* 入力ファイル名の取得 */
+    /* Get input file name */
     if ((input_file = filename_ptr[0]) == NULL) {
         fprintf(stderr, "%s: input file must be specified. \n", argv[0]);
         return 1;
     }
 
-    /* 出力ファイル名の取得 */
+    /* Get output file name */
     if ((output_file = filename_ptr[1]) == NULL) {
         fprintf(stderr, "%s: output file must be specified. \n", argv[0]);
         return 1;
     }
 
-    /* エンコードとデコードは同時に指定できない */
+    /* Encode and decode cannot be specified at the same time */
     if ((CommandLineParser_GetOptionAcquired(command_line_spec, "decode") == COMMAND_LINE_PARSER_TRUE)
             && (CommandLineParser_GetOptionAcquired(command_line_spec, "encode") == COMMAND_LINE_PARSER_TRUE)) {
         fprintf(stderr, "%s: encode and decode mode cannot specify simultaneously. \n", argv[0]);
@@ -323,23 +323,23 @@ int main(int argc, char** argv)
     }
 
     if (CommandLineParser_GetOptionAcquired(command_line_spec, "decode") == COMMAND_LINE_PARSER_TRUE) {
-        /* デコード */
+        /* Decode */
         uint8_t crc_check = 1;
-        /* CRC無効フラグを取得 */
+        /* Get CRC invalid flag */
         if (CommandLineParser_GetOptionAcquired(command_line_spec, "no-crc-check") == COMMAND_LINE_PARSER_TRUE) {
             crc_check = 0;
         }
-        /* 一括デコード実行 */
+        /* Execute batch decoding */
         if (do_decode(input_file, output_file, crc_check) != 0) {
             fprintf(stderr, "%s: failed to decode %s. \n", argv[0], input_file);
             return 1;
         }
     } else if (CommandLineParser_GetOptionAcquired(command_line_spec, "encode") == COMMAND_LINE_PARSER_TRUE) {
-        /* エンコード */
+        /* Encode */
         uint32_t encode_preset_no = DEFALUT_PRESET_INDEX;
         uint32_t max_num_block_samples = DEFALUT_MAX_NUM_BLOCK_SAMPLES;
         uint32_t variable_block_num_divisions = DEFALUT_NUM_VARIABLE_BLOCK_DIVISIONS;
-        /* エンコードプリセット番号取得 */
+        /* Get encoding preset number */
         if (CommandLineParser_GetOptionAcquired(command_line_spec, "mode") == COMMAND_LINE_PARSER_TRUE) {
             char *e;
             const char *lstr = CommandLineParser_GetArgumentString(command_line_spec, "mode");
@@ -353,7 +353,7 @@ int main(int argc, char** argv)
                 return 1;
             }
         }
-        /* ブロックあたりサンプル数の取得 */
+        /* Get number of samples per block */
         if (CommandLineParser_GetOptionAcquired(command_line_spec, "max-block-size") == COMMAND_LINE_PARSER_TRUE) {
             char *e;
             const char *lstr = CommandLineParser_GetArgumentString(command_line_spec, "max-block-size");
@@ -367,7 +367,7 @@ int main(int argc, char** argv)
                 return 1;
             }
         }
-        /* 可変ブロックエンコード分割数 */
+        /* Variable block encoding division number */
         if (CommandLineParser_GetOptionAcquired(command_line_spec, "variable-block-divisions") == COMMAND_LINE_PARSER_TRUE) {
             char *e;
             const char *lstr = CommandLineParser_GetArgumentString(command_line_spec, "variable-block-divisions");
@@ -381,7 +381,7 @@ int main(int argc, char** argv)
                 return 1;
             }
         }
-        /* 一括エンコード実行 */
+        /* Execute batch encoding */
         if (do_encode(input_file, output_file, encode_preset_no, max_num_block_samples, variable_block_num_divisions) != 0) {
             fprintf(stderr, "%s: failed to encode %s. \n", argv[0], input_file);
             return 1;

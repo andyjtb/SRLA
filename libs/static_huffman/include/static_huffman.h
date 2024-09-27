@@ -4,45 +4,45 @@
 #include <stdint.h>
 #include "bit_stream.h"
 
-/* 符号化するシンボルの最大数 */
+/* Maximum number of symbols to encode */
 #define STATICHUFFMAN_MAX_NUM_SYMBOLS 256
 
-/* ハフマン木 */
+/* Huffman tree */
 struct StaticHuffmanTree {
-    uint32_t num_symbols;                       /* 符号化シンボル数         */
-    uint32_t root_node;                         /* 根ノードのインデックス   */
+    uint32_t num_symbols;                       /* Number of encoded symbols */
+    uint32_t root_node;                         /* Index of the root node */
     struct {
-        uint32_t node_0;                        /* 左側の子供のインデックス */
-        uint32_t node_1;                        /* 右側の子供のインデックス */
-    } nodes[2 * STATICHUFFMAN_MAX_NUM_SYMBOLS]; /* 木のノード               */
+        uint32_t node_0;                        /* index of left child */
+        uint32_t node_1;                        /* index of right child */
+    } nodes[2 * STATICHUFFMAN_MAX_NUM_SYMBOLS]; /* Tree nodes */
 };
 
-/* ハフマン符号 */
+/* Huffman code */
 struct StaticHuffmanCodes {
-    uint32_t num_symbols;                    /* 符号化シンボル数              */
+    uint32_t num_symbols;                    /* Number of encoded symbols */
     struct {
-        uint32_t code;                       /* 割り当てたコード（最長32bit） */
-        uint8_t bit_count;                   /* コード長                      */
-    } codes[STATICHUFFMAN_MAX_NUM_SYMBOLS];  /* 各シンボルの符号              */
+        uint32_t code;                       /* Assigned code (maximum 32 bits) */
+        uint8_t bit_count;                   /* Code length */
+    } codes[STATICHUFFMAN_MAX_NUM_SYMBOLS];  /* Sign of each symbol */
 };
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ハフマン木の構築 */
+/* Build the Huffman tree */
 void StaticHuffman_BuildHuffmanTree(
         const uint32_t *symbol_counts, uint32_t num_symbols, struct StaticHuffmanTree *tree);
 
-/* 符号テーブル作成 */
+/* Create code table */
 void StaticHuffman_ConvertTreeToCodes(
         const struct StaticHuffmanTree *tree, struct StaticHuffmanCodes *codes);
 
-/* ハフマン符号の出力 */
+/* Output Huffman code */
 void StaticHuffman_PutCode(
         const struct StaticHuffmanCodes *codes, struct BitStream *stream, uint32_t val);
 
-/* ハフマン符号の取得 */
+/* Get Huffman code */
 uint32_t StaticHuffman_GetCode(
         const struct StaticHuffmanTree *tree, struct BitStream *stream);
 

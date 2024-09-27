@@ -5,102 +5,102 @@
 #include <string.h>
 #include <assert.h>
 
-/* パーサの読み込みバッファサイズ */
+/* Parser read buffer size */
 #define WAVBITBUFFER_BUFFER_SIZE         (128 * 1024)
 
-/* 下位n_bitsを取得 */
-/* 補足）((1 << n_bits) - 1)は下位の数値だけ取り出すマスクになる */
+/* Get the lowest n_bits */
+/* Supplementary Note) ((1 << n_bits) - 1) is a mask that extracts only the lower numbers */
 #define WAV_GetLowerBits(n_bits, val) ((val) & (uint32_t)((1 << (n_bits)) - 1))
 
-/* a,bの内の小さい値を取得 */
+/* Get the smaller value of a or b */
 #define WAV_Min(a, b) (((a) < (b)) ? (a) : (b))
 
-/* 内部エラー型 */
+/* Internal error type */
 typedef enum WAVErrorTag {
     WAV_ERROR_OK = 0,             /* OK */
-    WAV_ERROR_NG,                 /* 分類不能な失敗 */
-    WAV_ERROR_IO,                 /* 入出力エラー */
-    WAV_ERROR_INVALID_PARAMETER,  /* 不正な引数 */
-    WAV_ERROR_INVALID_FORMAT      /* 不正なフォーマット */
+    WAV_ERROR_NG,                 /* Unclassifiable failure */
+    WAV_ERROR_IO,                 /* I/O error */
+    WAV_ERROR_INVALID_PARAMETER,  /* Invalid argument */
+    WAV_ERROR_INVALID_FORMAT      /* Invalid format */
 } WAVError;
 
-/* ビットバッファ */
+/* bit buffer */
 struct WAVBitBuffer {
-    uint8_t   bytes[WAVBITBUFFER_BUFFER_SIZE];   /* ビットバッファ */
-    uint32_t  bit_count;                        /* ビット入力カウント */
-    int32_t   byte_pos;                         /* バイト列読み込み位置 */
+    uint8_t   bytes[WAVBITBUFFER_BUFFER_SIZE];   /* bit buffer */
+    uint32_t  bit_count;                        /* bit input count */
+    int32_t   byte_pos;                         /* Byte string read position */
 };
 
-/* パーサ */
+/* Parser */
 struct WAVParser {
-    FILE*               fp;       /* 読み込みファイルポインタ */
-    struct WAVBitBuffer buffer;   /* ビットバッファ */
+    FILE*               fp;       /* read file pointer */
+    struct WAVBitBuffer buffer;   /* bit buffer */
 };
 
-/* ライタ */
+/* Writer */
 struct WAVWriter {
-    FILE*     fp;                 /* 書き込みファイルポインタ */
-    uint32_t  bit_buffer;         /* 出力途中のビット */
-    uint32_t  bit_count;          /* 出力カウント     */
-    struct WAVBitBuffer buffer;   /* ビットバッファ */
+    FILE*     fp;                 /* write file pointer */
+    uint32_t  bit_buffer;         /* Bit in the middle of output */
+    uint32_t  bit_count;          /* Output count */
+    struct WAVBitBuffer buffer;   /* bit buffer */
 };
 
-/* パーサの初期化 */
+/* Initialize the parser */
 static void WAVParser_Initialize(struct WAVParser* parser, FILE* fp);
-/* パーサの使用終了 */
+/* End of parser use */
 static void WAVParser_Finalize(struct WAVParser* parser);
-/* n_bit 取得し、結果を右詰めする */
+/* Get n_bits and right-justify the result */
 static WAVError WAVParser_GetBits(struct WAVParser* parser, uint32_t n_bits, uint64_t* bitsbuf);
-/* シーク（fseek準拠） */
+/* Seek (compliant with fseek) */
 static WAVError WAVParser_Seek(struct WAVParser* parser, int32_t offset, int32_t wherefrom);
-/* ライタの初期化 */
+/* Writer initialization */
 static void WAVWriter_Initialize(struct WAVWriter* writer, FILE* fp);
-/* ライタの終了 */
+/* Writer termination */
 static void WAVWriter_Finalize(struct WAVWriter* writer);
-/* valの下位n_bitを書き込む */
+/* Write the lowest n_bits of val */
 static WAVError WAVWriter_PutBits(struct WAVWriter* writer, uint64_t val, uint32_t n_bits);
-/* バッファにたまったビットをクリア */
+/* Clear the bits accumulated in the buffer */
 static WAVError WAVWriter_Flush(struct WAVWriter* writer);
-/* リトルエンディアンでビットパターンを出力 */
+/* Output bit pattern in little endian */
 static WAVError WAVWriter_PutLittleEndianBytes(
         struct WAVWriter* writer, uint32_t nbytes, uint64_t data);
 
-/* ライタを使用してファイルフォーマットに従ったヘッダ部を出力 */
+/* Use a writer to output the header according to the file format */
 static WAVError WAVWriter_PutWAVHeader(
         struct WAVWriter* writer, const struct WAVFileFormat* format);
-/* ライタを使用してPCMデータ出力 */
+/* Output PCM data using the writer */
 static WAVError WAVWriter_PutWAVPcmData(
         struct WAVWriter* writer, const struct WAVFile* wavfile);
 
-/* リトルエンディアンでビットパターンを取得 */
+/* Get bit pattern in little endian */
 static WAVError WAVParser_GetLittleEndianBytes(
         struct WAVParser* parser, uint32_t nbytes, uint64_t* bitsbuf);
-/* パーサを使用して文字列取得 */
+/* Get string using parser */
 static WAVError WAVParser_GetString(
         struct WAVParser* parser, char* string_buffer, uint32_t string_length);
-/* パーサを使用して文字列取得/一致チェック */
+/* Use parser to get string/check for match */
 static WAVError WAVParser_CheckSignatureString(
         struct WAVParser* parser, const char* signature, uint32_t signature_length);
-/* パーサを使用してファイルフォーマットを読み取り */
+/* Use the parser to read the file format */
 static WAVError WAVParser_GetWAVFormat(
         struct WAVParser* parser, struct WAVFileFormat* format);
-/* パーサを使用してPCMデータを読み取り */
+/* Read the PCM data using the parser */
 static WAVError WAVParser_GetWAVPcmData(
         struct WAVParser* parser, struct WAVFile* wavfile);
 
-/* 8bitPCM形式を32bit形式に変換 */
+/* Convert 8bit PCM format to 32bit format */
 static int32_t WAV_Convert8bitPCMto32bitPCM(int32_t in_8bitpcm);
-/* 16bitPCM形式を32bit形式に変換 */
+/* Convert 16bit PCM format to 32bit format */
 static int32_t WAV_Convert16bitPCMto32bitPCM(int32_t in_16bitpcm);
-/* 24bitPCM形式を32bit形式に変換 */
+/* Convert 24bit PCM format to 32bit format */
 static int32_t WAV_Convert24bitPCMto32bitPCM(int32_t in_24bitpcm);
-/* 32bitPCM形式を32bit形式に変換 */
+/* Convert 32bit PCM format to 32bit format */
 static int32_t WAV_Convert32bitPCMto32bitPCM(int32_t in_32bitpcm);
 
-/* 32bitPCM形式を32bit形式に変換 */
+/* Convert 32bit PCM format to 32bit format */
 static int32_t WAV_Convert32bitPCMto32bitPCM(int32_t in_32bitpcm);
 
-/* パーサを使用してファイルフォーマットを読み取り */
+/* Use the parser to read the file format */
 static WAVError WAVParser_GetWAVFormat(
         struct WAVParser* parser, struct WAVFileFormat* format)
 {
@@ -108,36 +108,40 @@ static WAVError WAVParser_GetWAVFormat(
     int32_t   fmt_chunk_size;
     struct WAVFileFormat tmp_format;
 
-    /* 引数チェック */
+    /* Argument check */
     if (parser == NULL || format == NULL) {
         return WAV_ERROR_INVALID_PARAMETER;
     }
 
-    /* ヘッダ 'R', 'I', 'F', 'F' をチェック */
+    /* Check for headers 'R', 'I', 'F', 'F' */
     if (WAVParser_CheckSignatureString(parser, "RIFF", 4) != WAV_ERROR_OK) {
         return WAV_ERROR_INVALID_FORMAT;
     }
 
-    /* ファイルサイズ-8（読み飛ばし） */
+    /* File size - 8 (skip) */
     if (WAVParser_GetLittleEndianBytes(parser, 4, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
 
-    /* ヘッダ 'W', 'A', 'V', 'E' をチェック */
+    /* Check for headers 'W', 'A', 'V', 'E' */
     if (WAVParser_CheckSignatureString(parser, "WAVE", 4) != WAV_ERROR_OK) {
         return WAV_ERROR_INVALID_FORMAT;
     }
 
-    /* fmtチャンクのヘッダ 'f', 'm', 't', ' ' をチェック */
+    /* Check for fmt chunk headers 'f', 'm', 't', ' ' */
     if (WAVParser_CheckSignatureString(parser, "fmt ", 4) != WAV_ERROR_OK) {
         return WAV_ERROR_INVALID_FORMAT;
     }
 
-    /* fmtチャンクのバイト数を取得
-    * 補足/注意）16より大きいサイズのfmtチャンクの内容（拡張）は読み飛ばす */
+    /*
+/* Get the number of bytes in the fmt chunk
+* Supplementary note/Note) The contents (extensions) of fmt chunks with a size greater than 16 will be skipped. */
+*/
     if (WAVParser_GetLittleEndianBytes(parser, 4, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
     fmt_chunk_size = (int32_t)bitsbuf;
 
-    /* フォーマットIDをチェック
-    * 補足）1（リニアPCM）以外対応していない */
+    /*
+/* Check the format ID
+* Note) Only 1 (Linear PCM) is supported */
+*/
     if (WAVParser_GetLittleEndianBytes(parser, 2, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
     if (bitsbuf != 1) {
         /* fprintf(stderr, "Unsupported format: fmt chunk format ID \n"); */
@@ -145,42 +149,42 @@ static WAVError WAVParser_GetWAVFormat(
     }
     tmp_format.data_format = WAV_DATA_FORMAT_PCM;
 
-    /* チャンネル数 */
+    /* Number of channels */
     if (WAVParser_GetLittleEndianBytes(parser, 2, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
     tmp_format.num_channels = (uint32_t)bitsbuf;
 
-    /* サンプリングレート */
+    /* Sampling rate */
     if (WAVParser_GetLittleEndianBytes(parser, 4, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
     tmp_format.sampling_rate =(uint32_t) bitsbuf;
 
-    /* データ速度（byte/sec）は読み飛ばし */
+    /* Data speed (byte/sec) skipped */
     if (WAVParser_GetLittleEndianBytes(parser, 4, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
 
-    /* ブロックあたりサイズ数は読み飛ばし */
+    /* Size number per block is skipped */
     if (WAVParser_GetLittleEndianBytes(parser, 2, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
 
-    /* 量子化ビット数（サンプルあたりのビット数） */
+    /* Quantization bit depth (bits per sample) */
     if (WAVParser_GetLittleEndianBytes(parser, 2, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
     tmp_format.bits_per_sample = (uint32_t)bitsbuf;
 
-    /* 拡張部分の読み取りには未対応: 読み飛ばしを行う */
+    /* Reading of extensions is not supported: Skip reading */
     if (fmt_chunk_size > 16) {
         fprintf(stderr, "Warning: skip fmt chunk extention (unsupported). \n");
         if (WAVParser_Seek(parser, fmt_chunk_size - 16, SEEK_CUR) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
     }
 
-    /* チャンク読み取り */
+    /* Chunk read */
     while (1) {
         char string_buf[4];
-        /* チャンク文字列取得 */
+        /* Get chunk string */
         if (WAVParser_GetString(parser, string_buf, 4) != WAV_ERROR_OK) {
             return WAV_ERROR_IO;
         }
         if (strncmp(string_buf, "data", 4) == 0) {
-            /* データチャンクを見つけたら終わり */
+            /* End when data chunk is found */
             break;
         } else {
-            /* 他のチャンクはサイズだけ取得してシークにより読み飛ばす */
+            /* Other chunks are skipped by seeking after getting only their size */
             if (WAVParser_GetLittleEndianBytes(parser, 4, &bitsbuf) != WAV_ERROR_OK) {
                 return WAV_ERROR_IO;
             }
@@ -189,19 +193,19 @@ static WAVError WAVParser_GetWAVFormat(
         }
     }
 
-    /* サンプル数: 波形データバイト数から算出 */
+    /* Number of samples: Calculated from number of waveform data bytes */
     if (WAVParser_GetLittleEndianBytes(parser, 4, &bitsbuf) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
     tmp_format.num_samples = (uint32_t)bitsbuf;
     assert(tmp_format.num_samples % ((tmp_format.bits_per_sample / 8) * tmp_format.num_channels) == 0);
     tmp_format.num_samples /= ((tmp_format.bits_per_sample / 8) * tmp_format.num_channels);
 
-    /* 構造体コピー */
+    /* Copy structure */
     *format = tmp_format;
 
     return WAV_ERROR_OK;
 }
 
-/* パーサを使用してPCMデータを読み取り */
+/* Read the PCM data using the parser */
 static WAVError WAVParser_GetWAVPcmData(
         struct WAVParser* parser, struct WAVFile* wavfile)
 {
@@ -209,12 +213,12 @@ static WAVError WAVParser_GetWAVPcmData(
     uint64_t  bitsbuf;
     int32_t   (*convert_to_sint32_func)(int32_t);
 
-    /* 引数チェック */
+    /* Argument check */
     if (parser == NULL || wavfile == NULL) {
         return WAV_ERROR_INVALID_PARAMETER;
     }
 
-    /* ビット深度に合わせてPCMデータの変換関数を決定 */
+    /* Determine the PCM data conversion function according to the bit depth */
     switch (wavfile->format.bits_per_sample) {
     case 8:
         convert_to_sint32_func = WAV_Convert8bitPCMto32bitPCM;
@@ -233,14 +237,14 @@ static WAVError WAVParser_GetWAVPcmData(
         return WAV_ERROR_INVALID_FORMAT;
     }
 
-    /* データ読み取り */
+    /* Read data */
     bytes_per_sample = wavfile->format.bits_per_sample / 8;
     for (sample = 0; sample < wavfile->format.num_samples; sample++) {
         for (ch = 0; ch < wavfile->format.num_channels; ch++) {
             if (WAVParser_GetLittleEndianBytes(parser, bytes_per_sample, &bitsbuf) != WAV_ERROR_OK) {
                 return WAV_ERROR_IO;
             }
-            /* 32bit整数形式に変形してデータにセット */
+            /* Convert to 32-bit integer format and set to data */
             wavfile->data[ch][sample] = convert_to_sint32_func((int32_t)(bitsbuf));
         }
     }
@@ -248,43 +252,43 @@ static WAVError WAVParser_GetWAVPcmData(
     return WAV_ERROR_OK;
 }
 
-/* ファイルからWAVファイルフォーマットだけ読み取り */
+/* Read only WAV file formats from file */
 WAVApiResult WAV_GetWAVFormatFromFile(
         const char* filename, struct WAVFileFormat* format)
 {
     struct WAVParser parser;
     FILE*            fp;
 
-    /* 引数チェック */
+    /* Argument check */
     if (filename == NULL || format == NULL) {
         return WAV_APIRESULT_NG;
     }
 
-    /* wavファイルを開く */
+    /* Open wav file */
     fp = fopen(filename, "rb");
     if (fp == NULL) {
         /* fprintf(stderr, "Failed to open %s. \n", filename); */
         return WAV_APIRESULT_NG;
     }
 
-    /* パーサ初期化 */
+    /* Parser initialization */
     WAVParser_Initialize(&parser, fp);
 
-    /* ヘッダ読み取り */
+    /* Read header */
     if (WAVParser_GetWAVFormat(&parser, format) != WAV_ERROR_OK) {
         return WAV_APIRESULT_NG;
     }
 
-    /* パーサ使用終了 */
+    /* End of parser use */
     WAVParser_Finalize(&parser);
 
-    /* ファイルを閉じる */
+    /* Close the file */
     fclose(fp);
 
     return WAV_APIRESULT_OK;
 }
 
-/* ファイルからWAVファイルハンドルを作成 */
+/* Create a WAV file handle from the file */
 struct WAVFile* WAV_CreateFromFile(const char* filename)
 {
     struct WAVParser      parser;
@@ -292,47 +296,47 @@ struct WAVFile* WAV_CreateFromFile(const char* filename)
     struct WAVFile*       wavfile;
     struct WAVFileFormat  format;
 
-    /* 引数チェック */
+    /* Argument check */
     if (filename == NULL) {
         return NULL;
     }
 
-    /* wavファイルを開く */
+    /* Open wav file */
     fp = fopen(filename, "rb");
     if (fp == NULL) {
         /* fprintf(stderr, "Failed to open %s. \n", filename); */
         return NULL;
     }
 
-    /* パーサ初期化 */
+    /* Parser initialization */
     WAVParser_Initialize(&parser, fp);
 
-    /* ヘッダ読み取り */
+    /* Read header */
     if (WAVParser_GetWAVFormat(&parser, &format) != WAV_ERROR_OK) {
         return NULL;
     }
 
-    /* ハンドル作成 */
+    /* Create handle */
     wavfile = WAV_Create(&format);
     if (wavfile == NULL) {
         return NULL;
     }
 
-    /* PCMデータ読み取り */
+    /* Read PCM data */
     if (WAVParser_GetWAVPcmData(&parser, wavfile) != WAV_ERROR_OK) {
         goto EXIT_FAILURE_WITH_DATA_RELEASE;
     }
 
-    /* パーサ終了 */
+    /* Parser end */
     WAVParser_Finalize(&parser);
 
-    /* ファイルを閉じる */
+    /* Close the file */
     fclose(fp);
 
-    /* 正常終了 */
+    /* normal termination */
     return wavfile;
 
-    /* ハンドルが確保したデータを全て解放して終了 */
+    /* Release all data allocated by the handle and exit */
 EXIT_FAILURE_WITH_DATA_RELEASE:
     WAV_Destroy(wavfile);
     WAVParser_Finalize(&parser);
@@ -340,33 +344,33 @@ EXIT_FAILURE_WITH_DATA_RELEASE:
     return NULL;
 }
 
-/* フォーマットを指定して新規にWAVファイルハンドルを作成 */
+/* Create a new WAV file handle with the specified format */
 struct WAVFile* WAV_Create(const struct WAVFileFormat* format)
 {
     uint32_t ch;
     struct WAVFile* wavfile;
 
-    /* 引数チェック */
+    /* Argument check */
     if (format == NULL) {
         return NULL;
     }
 
-    /* 現在はPCMフォーマット以外対応していない */
+    /* Currently only PCM format is supported */
     if (format->data_format != WAV_DATA_FORMAT_PCM) {
         /* fprintf(stderr, "Unsupported wav data format. \n"); */
         return NULL;
     }
 
-    /* ハンドル作成 */
+    /* Create handle */
     wavfile = (struct WAVFile *)malloc(sizeof(struct WAVFile));
     if (wavfile == NULL) {
         goto EXIT_FAILURE_WITH_DATA_RELEASE;
     }
 
-    /* 構造体コピーによりフォーマット情報取得 */
+    /* Get format information by copying the structure */
     wavfile->format = (*format);
 
-    /* データ領域の割り当て */
+    /* Data area allocation */
     wavfile->data = (WAVPcmData **)malloc(sizeof(WAVPcmData *) * format->num_channels);
     if (wavfile->data == NULL) {
         goto EXIT_FAILURE_WITH_DATA_RELEASE;
@@ -385,35 +389,35 @@ EXIT_FAILURE_WITH_DATA_RELEASE:
     return NULL;
 }
 
-/* 8bitPCM形式を32bit形式に変換 */
+/* Convert 8bit PCM format to 32bit format */
 static int32_t WAV_Convert8bitPCMto32bitPCM(int32_t in_8bitpcm)
 {
-    /* 無音に相当する128を引く */
+    /* Subtract 128, which corresponds to silence */
     return (in_8bitpcm - 128);
 }
 
-/* 16bitPCM形式を32bit形式に変換 */
+/* Convert 16bit PCM format to 32bit format */
 static int32_t WAV_Convert16bitPCMto32bitPCM(int32_t in_16bitpcm)
 {
-    /* 一旦32bit幅にしてから算術右シフトで符号をつける */
+    /* First make it 32-bit wide, then use arithmetic right shift to add the sign */
     return (in_16bitpcm << 16) >> 16;
 }
 
-/* 24bitPCM形式を32bit形式に変換 */
+/* Convert 24bit PCM format to 32bit format */
 static int32_t WAV_Convert24bitPCMto32bitPCM(int32_t in_24bitpcm)
 {
-    /* 一旦32bit幅にしてから算術右シフトで符号をつける */
+    /* First make it 32-bit wide, then use arithmetic right shift to add the sign */
     return (in_24bitpcm << 8) >> 8;
 }
 
-/* 32bitPCM形式を32bit形式に変換 */
+/* Convert 32bit PCM format to 32bit format */
 static int32_t WAV_Convert32bitPCMto32bitPCM(int32_t in_32bitpcm)
 {
-    /* 何もしない */
+    /* Do nothing */
     return in_32bitpcm;
 }
 
-/* パーサの初期化 */
+/* Initialize the parser */
 static void WAVParser_Initialize(struct WAVParser* parser, FILE* fp)
 {
     parser->fp                = fp;
@@ -421,7 +425,7 @@ static void WAVParser_Initialize(struct WAVParser* parser, FILE* fp)
     parser->buffer.byte_pos   = -1;
 }
 
-/* パーサの使用終了 */
+/* End of parser use */
 static void WAVParser_Finalize(struct WAVParser* parser)
 {
     parser->fp                = NULL;
@@ -429,18 +433,18 @@ static void WAVParser_Finalize(struct WAVParser* parser)
     parser->buffer.byte_pos   = -1;
 }
 
-/* n_bit 取得し、結果を右詰めする */
+/* Get n_bits and right-justify the result */
 static WAVError WAVParser_GetBits(struct WAVParser* parser, uint32_t n_bits, uint64_t* bitsbuf)
 {
     uint64_t tmp;
     struct WAVBitBuffer *buf = &(parser->buffer);
 
-    /* 引数チェック */
+    /* Argument check */
     if (parser == NULL || bitsbuf == NULL || n_bits > 64) {
         return WAV_ERROR_INVALID_PARAMETER;
     }
 
-    /* 初回読み込み */
+    /* First load */
     if (buf->byte_pos == -1) {
         if (fread(buf->bytes, sizeof(uint8_t), WAVBITBUFFER_BUFFER_SIZE, parser->fp) == 0) {
             return WAV_ERROR_IO;
@@ -449,20 +453,22 @@ static WAVError WAVParser_GetBits(struct WAVParser* parser, uint32_t n_bits, uin
         buf->bit_count  = 8;
     }
 
-    /* 最上位ビットからデータを埋めていく
-    * 初回ループではtmpの上位ビットにセット
-    * 2回目以降は8bit単位で入力しtmpにセット */
+    /*
+/* Fill data from the most significant bit
+* In the first loop, set it to the higher bits of tmp
+* From the second loop onwards, input in 8-bit units and set it to tmp */
+*/
     tmp = 0;
     while (n_bits > buf->bit_count) {
-        /* 上位bitから埋めていく */
+        /* Fill from the most significant bit */
         n_bits  -= buf->bit_count;
         tmp     |= (uint64_t)WAV_GetLowerBits(buf->bit_count, buf->bytes[buf->byte_pos]) << n_bits;
 
-        /* 1バイト読み進める */
+        /* Read forward 1 byte */
         buf->byte_pos++;
         buf->bit_count   = 8;
 
-        /* バッファが一杯ならば、再度読み込み */
+        /* If the buffer is full, re-read it */
         if (buf->byte_pos == WAVBITBUFFER_BUFFER_SIZE) {
             if (fread(buf->bytes, sizeof(uint8_t), WAVBITBUFFER_BUFFER_SIZE, parser->fp) == 0) {
                 return WAV_ERROR_IO;
@@ -471,8 +477,10 @@ static WAVError WAVParser_GetBits(struct WAVParser* parser, uint32_t n_bits, uin
         }
     }
 
-    /* 端数ビットの処理
-    * 残ったビット分をtmpの最上位ビットにセット */
+    /*
+/* Processing of fractional bits
+* Set the remaining bits to the most significant bit of tmp */
+*/
     buf->bit_count -= n_bits;
     tmp            |= (uint64_t)WAV_GetLowerBits(n_bits, (uint32_t)(buf->bytes[buf->byte_pos] >> buf->bit_count));
 
@@ -480,27 +488,27 @@ static WAVError WAVParser_GetBits(struct WAVParser* parser, uint32_t n_bits, uin
     return WAV_ERROR_OK;
 }
 
-/* シーク（fseek準拠） */
+/* Seek (compliant with fseek) */
 static WAVError WAVParser_Seek(struct WAVParser* parser, int32_t offset, int32_t wherefrom)
 {
     if (parser->buffer.byte_pos != -1) {
-        /* バッファに取り込んだ分先読みしているので戻す */
+        /* The amount of data that has been read into the buffer is read ahead, so return it */
         offset -= (WAVBITBUFFER_BUFFER_SIZE - (parser->buffer.byte_pos + 1));
     }
-    /* 移動 */
+    /* Move */
     fseek(parser->fp, offset, wherefrom);
-    /* バッファをクリア */
+    /* Clear the buffer */
     parser->buffer.byte_pos = -1;
 
     return WAV_ERROR_OK;
 }
 
-/* WAVファイルハンドルを破棄 */
+/* Discard the WAV file handle */
 void WAV_Destroy(struct WAVFile* wavfile)
 {
     uint32_t ch;
 
-    /* NULLチェックして解放 */
+    /* Check for NULL and release */
 #define NULLCHECK_AND_FREE(ptr) { \
     if ((ptr) != NULL) {            \
         free(ptr);                    \
@@ -519,91 +527,93 @@ void WAV_Destroy(struct WAVFile* wavfile)
 #undef NULLCHECK_AND_FREE
 }
 
-/* ライタを使用してファイルフォーマットに従ったヘッダ部を出力 */
+/* Use a writer to output the header according to the file format */
 static WAVError WAVWriter_PutWAVHeader(
         struct WAVWriter* writer, const struct WAVFileFormat* format)
 {
     uint32_t filesize, pcm_data_size;
 
-    /* 引数チェック */
+    /* Argument check */
     if (writer == NULL || format == NULL) {
         return WAV_ERROR_INVALID_PARAMETER;
     }
 
-    /* フォーマットチェック */
-    /* PCM以外は対応していない */
+    /* Format check */
+    /* Only PCM is supported */
     if (format->data_format != WAV_DATA_FORMAT_PCM) {
         return WAV_ERROR_INVALID_FORMAT;
     }
 
-    /* PCM データサイズ */
+    /* PCM data size */
     pcm_data_size
         = format->num_samples * (format->bits_per_sample / 8) * format->num_channels;
 
-    /* ファイルサイズ */
-    /* 44は"RIFF" から ("data"のサイズ) までのフィールドのバイト数（拡張部分を一切含まない） */
+    /* File size */
+    /* 44 is the number of bytes in the field from "RIFF" to (the size of "data") (not including any extensions) */
     filesize = pcm_data_size + 44;
 
-    /* ヘッダ 'R', 'I', 'F', 'F' を出力 */
+    /* Output headers 'R', 'I', 'F', 'F' */
     if (WAVWriter_PutBits(writer, 'R', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'I', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'F', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'F', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* ファイルサイズ-8（この要素以降のサイズ） */
+    /* File size - 8 (size after this element) */
     if (WAVWriter_PutLittleEndianBytes(writer, 4, filesize - 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
 
-    /* ヘッダ 'W', 'A', 'V', 'E' を出力 */
+    /* Output headers 'W', 'A', 'V', 'E' */
     if (WAVWriter_PutBits(writer, 'W', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'A', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'V', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'E', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* fmtチャンクのヘッダ 'f', 'm', 't', ' ' を出力 */
+    /* Output fmt chunk headers 'f', 'm', 't', ' ' */
     if (WAVWriter_PutBits(writer, 'f', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'm', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 't', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, ' ', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* fmtチャンクのバイト数を出力 （補足）現在は16byte決め打ち */
+    /* Output the number of bytes in the fmt chunk (Note) Currently, it is set to 16 bytes */
     if (WAVWriter_PutLittleEndianBytes(writer, 4, 16) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* フォーマットIDを出力 （補足）現在は1（リニアPCM）決め打ち */
+    /* Output format ID (Note) Currently set to 1 (Linear PCM) */
     if (WAVWriter_PutLittleEndianBytes(writer, 2,  1) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* チャンネル数 */
+    /* Number of channels */
     if (WAVWriter_PutLittleEndianBytes(writer, 2, format->num_channels) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* サンプリングレート */
+    /* Sampling rate */
     if (WAVWriter_PutLittleEndianBytes(writer, 4, format->sampling_rate) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* データ速度（byte/sec） */
+    /* Data speed (bytes/sec) */
     if (WAVWriter_PutLittleEndianBytes(writer, 4,
                 format->sampling_rate * (format->bits_per_sample / 8) * format->num_channels)
             != WAV_ERROR_OK) { return WAV_ERROR_IO; }
 
-    /* ブロックあたりサイズ数 */
+    /* Size number per block */
     if (WAVWriter_PutLittleEndianBytes(writer, 2,
                 (format->bits_per_sample / 8) * format->num_channels)
             != WAV_ERROR_OK) { return WAV_ERROR_IO; }
 
-    /* 量子化ビット数（サンプルあたりのビット数） */
+    /* Quantization bit depth (bits per sample) */
     if (WAVWriter_PutLittleEndianBytes(writer, 2, format->bits_per_sample) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* "data" チャンクのヘッダ出力 */
+    /* Output header of "data" chunk */
     if (WAVWriter_PutBits(writer, 'd', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'a', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 't', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
     if (WAVWriter_PutBits(writer, 'a', 8) != WAV_ERROR_OK) { return WAV_ERROR_IO; };
 
-    /* 波形データバイト数 */
+    /* Number of bytes of waveform data */
     if (WAVWriter_PutLittleEndianBytes(writer, 4, pcm_data_size) != WAV_ERROR_OK) { return WAV_ERROR_IO; }
 
     return WAV_ERROR_OK;
 }
 
-/* リトルエンディアンで書き出し
-* 注意）dataはスワップされる可能性がある */
+/*
+/* Write in little endian format
+* Note) data may be swapped */
+*/
 static size_t WAVWrite_FWriteLittleEndian(
         void *data, size_t size, size_t ndata, FILE *fp)
 {
@@ -611,12 +621,12 @@ static size_t WAVWrite_FWriteLittleEndian(
     uint8_t *buffer;
     uint32_t i;
 
-    /* リトルエンディアン環境ではそのままfwrite */
+    /* In little endian environment, just fwrite */
     if ((size == 1) || (*((char *)&x) == 1)) {
         return fwrite(data, size, ndata, fp);
     }
 
-    /* ビッグエンディアン環境では並び替えてから書き込む */
+    /* In big endian environment, rearrange before writing */
     buffer = (uint8_t *)data;
 
     switch (size) {
@@ -651,16 +661,16 @@ static size_t WAVWrite_FWriteLittleEndian(
     return fwrite(data, size, ndata, fp);
 }
 
-/* ライタを使用してPCMデータ出力 */
+/* Output PCM data using the writer */
 static WAVError WAVWriter_PutWAVPcmData(
         struct WAVWriter* writer, const struct WAVFile* wavfile)
 {
     uint32_t ch, smpl, progress;
 
-    /* バッファは空に */
+    /* The buffer is empty */
     WAVWriter_Flush(writer);
 
-    /* チャンネルインターリーブしながら書き出し */
+    /* Write with channel interleaving */
     switch (wavfile->format.bits_per_sample) {
     case 8:
         {
@@ -764,49 +774,49 @@ static WAVError WAVWriter_PutWAVPcmData(
     return WAV_ERROR_OK;
 }
 
-/* ファイル書き出し */
+/* Write file */
 WAVApiResult WAV_WriteToFile(
         const char* filename, const struct WAVFile* wavfile)
 {
     struct WAVWriter  writer;
     FILE*             fp;
 
-    /* 引数チェック */
+    /* Argument check */
     if (filename == NULL || wavfile == NULL) {
         return WAV_APIRESULT_INVALID_PARAMETER;
     }
 
-    /* wavファイルを開く */
+    /* Open wav file */
     fp = fopen(filename, "wb");
     if (fp == NULL) {
         /* fprintf(stderr, "Failed to open %s. \n", filename); */
         return WAV_APIRESULT_NG;
     }
 
-    /* ライタ初期化 */
+    /* Writer initialization */
     WAVWriter_Initialize(&writer, fp);
 
-    /* ヘッダ書き出し */
+    /* Write header */
     if (WAVWriter_PutWAVHeader(&writer, &wavfile->format) != WAV_ERROR_OK) {
         return WAV_APIRESULT_NG;
     }
 
-    /* データ書き出し */
+    /* Write data */
     if (WAVWriter_PutWAVPcmData(&writer, wavfile) != WAV_ERROR_OK) {
         return WAV_APIRESULT_NG;
     }
 
-    /* ライタ終了 */
+    /* Writer finished */
     WAVWriter_Finalize(&writer);
 
-    /* ファイルを閉じる */
+    /* Close the file */
     fclose(fp);
 
-    /* 正常終了 */
+    /* normal termination */
     return WAV_APIRESULT_OK;
 }
 
-/* ライタの初期化 */
+/* Writer initialization */
 static void WAVWriter_Initialize(struct WAVWriter* writer, FILE* fp)
 {
     writer->fp                = fp;
@@ -816,13 +826,13 @@ static void WAVWriter_Initialize(struct WAVWriter* writer, FILE* fp)
     writer->buffer.byte_pos   = 0;
 }
 
-/* ライタの終了 */
+/* Writer termination */
 static void WAVWriter_Finalize(struct WAVWriter* writer)
 {
-    /* バッファに余っているデータを書き出し */
+    /* Write out any data remaining in the buffer */
     WAVWriter_Flush(writer);
 
-    /* メンバをクリア */
+    /* Clear members */
     writer->fp              = NULL;
     writer->bit_count       = 8;
     writer->bit_buffer      = 0;
@@ -830,32 +840,34 @@ static void WAVWriter_Finalize(struct WAVWriter* writer)
     writer->buffer.byte_pos = 0;
 }
 
-/* valの下位n_bitを書き込む（ビッグエンディアンで） */
+/* Write the lowest n_bits of val (in big endian) */
 static WAVError WAVWriter_PutBits(struct WAVWriter* writer, uint64_t val, uint32_t n_bits)
 {
-    /* 無効な引数 */
+    /* Invalid argument */
     if (writer == NULL) {
         return WAV_ERROR_INVALID_PARAMETER;
     }
 
-    /* valの上位ビットから順次出力
-    * 初回ループでは端数（出力に必要なビット数）分を埋め出力
-    * 2回目以降は8bit単位で出力 */
+    /*
+/* Sequentially output the most significant bits of val.
+* In the first loop, fill in the remainder (number of bits required for output) before outputting.
+* From the second loop onwards, output in 8-bit units. */
+*/
     while (n_bits >= writer->bit_count) {
         n_bits -= writer->bit_count;
         writer->bit_buffer |= (uint8_t)WAV_GetLowerBits(writer->bit_count, val >> n_bits);
 
-        /* バッファに追記 */
+        /* Append to the buffer */
         writer->buffer.bytes[writer->buffer.byte_pos++] = (uint8_t)(writer->bit_buffer & 0xFF);
 
-        /* バッファが一杯になったら書き出し */
+        /* Write out when buffer is full */
         if (writer->buffer.byte_pos == WAVBITBUFFER_BUFFER_SIZE) {
             if (fwrite(writer->buffer.bytes,
                         sizeof(uint8_t), WAVBITBUFFER_BUFFER_SIZE,
                         writer->fp) < WAVBITBUFFER_BUFFER_SIZE) {
                 return WAV_ERROR_IO;
             }
-            /* 書き込み位置をリセット */
+            /* Reset write position */
             writer->buffer.byte_pos = 0;
         }
 
@@ -863,28 +875,30 @@ static WAVError WAVWriter_PutBits(struct WAVWriter* writer, uint64_t val, uint32
         writer->bit_count   = 8;
     }
 
-    /* 端数ビットの処理:
-    * 残った分をバッファの上位ビットにセット */
+    /*
+/* Processing of fractional bits:
+* Set the remaining bit to the upper bit of the buffer */
+*/
     writer->bit_count -= n_bits;
     writer->bit_buffer |= (uint8_t)(WAV_GetLowerBits(n_bits, (uint32_t)val) << writer->bit_count);
 
     return WAV_ERROR_OK;
 }
 
-/* リトルエンディアンでビットパターンを出力 */
+/* Output bit pattern in little endian */
 static WAVError WAVWriter_PutLittleEndianBytes(
         struct WAVWriter* writer, uint32_t nbytes, uint64_t data)
 {
     uint64_t out;
     uint32_t i_byte;
 
-    /* リトルエンディアンに並び替え */
+    /* Sort into little endian */
     out = 0;
     for (i_byte = 0; i_byte < nbytes; i_byte++) {
         out |= ((data >> (8 * (nbytes - i_byte - 1))) & 0xFFUL) << (8 * i_byte);
     }
 
-    /* 出力 */
+    /* output */
     if (WAVWriter_PutBits(writer, out, (uint8_t)(nbytes * 8)) != WAV_ERROR_OK) {
         return WAV_ERROR_IO;
     }
@@ -892,15 +906,15 @@ static WAVError WAVWriter_PutLittleEndianBytes(
     return WAV_ERROR_OK;
 }
 
-/* バッファにたまったビットをクリア */
+/* Clear the bits accumulated in the buffer */
 static WAVError WAVWriter_Flush(struct WAVWriter* writer)
 {
-    /* 引数チェック */
+    /* Argument check */
     if (writer == NULL) {
         return WAV_ERROR_INVALID_PARAMETER;
     }
 
-    /* 余ったビットを強制出力 */
+    /* Force output of remaining bits */
     if (writer->bit_count != 8) {
         if (WAVWriter_PutBits(writer, 0, (uint8_t)writer->bit_count) != WAV_ERROR_OK) {
             return WAV_ERROR_IO;
@@ -909,31 +923,31 @@ static WAVError WAVWriter_Flush(struct WAVWriter* writer)
         writer->bit_count  = 8;
     }
 
-    /* バッファに残っているデータをフラッシュ */
+    /* Flush any data remaining in the buffer */
     if (fwrite(writer->buffer.bytes,
                 sizeof(uint8_t), (uint32_t)writer->buffer.byte_pos,
                 writer->fp) < (size_t)writer->buffer.byte_pos) {
         return WAV_ERROR_IO;
     }
-    /* バッファ残量は0に */
+    /* Buffer remaining capacity is set to 0 */
     writer->buffer.byte_pos = 0;
 
     return WAV_ERROR_OK;
 }
 
-/* リトルエンディアンでビットパターンを取得 */
+/* Get bit pattern in little endian */
 static WAVError WAVParser_GetLittleEndianBytes(
         struct WAVParser* parser, uint32_t nbytes, uint64_t* bitsbuf)
 {
     uint64_t tmp, ret;
     uint32_t i_byte;
 
-    /* ビッグエンディアンで取得 */
+    /* Get in big endian */
     if (WAVParser_GetBits(parser, nbytes * 8, &tmp) != WAV_ERROR_OK) {
         return WAV_ERROR_IO;
     }
 
-    /* リトルエンディアンに並び替え */
+    /* Sort into little endian */
     ret = 0;
     for (i_byte = 0; i_byte < nbytes; i_byte++) {
         ret |= ((tmp >> (8 * (nbytes - i_byte - 1))) & 0xFFUL) << (8 * i_byte);
@@ -943,7 +957,7 @@ static WAVError WAVParser_GetLittleEndianBytes(
     return WAV_ERROR_OK;
 }
 
-/* パーサを使用して文字列取得 */
+/* Get string using parser */
 static WAVError WAVParser_GetString(
         struct WAVParser* parser, char* string_buffer, uint32_t string_length)
 {
@@ -952,9 +966,9 @@ static WAVError WAVParser_GetString(
 
     assert(parser != NULL && string_buffer != NULL);
 
-    /* 文字列取得 */
+    /* Get string */
     for (i_byte = 0; i_byte < string_length; i_byte++) {
-        /* 1文字取得 */
+        /* Get 1 character */
         if (WAVParser_GetBits(parser, 8, &bitsbuf) != WAV_ERROR_OK) {
             return WAV_ERROR_IO;
         }
@@ -964,7 +978,7 @@ static WAVError WAVParser_GetString(
     return WAV_ERROR_OK;
 }
 
-/* パーサを使用して文字列取得/一致チェック */
+/* Use parser to get string/check for match */
 static WAVError WAVParser_CheckSignatureString(
         struct WAVParser* parser, const char* signature, uint32_t signature_length)
 {
@@ -973,13 +987,13 @@ static WAVError WAVParser_CheckSignatureString(
 
     assert(parser != NULL && signature != NULL);
 
-    /* 文字列取得/検査 */
+    /* Get/check string */
     for (i_byte = 0; i_byte < signature_length; i_byte++) {
-        /* 1文字取得 */
+        /* Get 1 character */
         if (WAVParser_GetBits(parser, 8, &bitsbuf) != WAV_ERROR_OK) {
             return WAV_ERROR_IO;
         }
-        /* シグネチャ検査 */
+        /* Signature check */
         if (signature[i_byte] != (char)bitsbuf) {
             /* fprintf(stderr, "Failed to check %s header signature. \n", signature); */
             return WAV_ERROR_INVALID_FORMAT;

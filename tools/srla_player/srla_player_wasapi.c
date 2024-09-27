@@ -4,36 +4,36 @@
 
 #include <windows.h>
 
-/* マクロ呼び出しを使うためCOBJMACROSを定義 */
+/* Define COBJMACROS to use macro calls */
 #define COBJMACROS
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #undef COBJMACROS
 
 #define DECODE_BUFFER_NUM_SAMPLES (1024)
-#define REQUESTED_SOUND_BUFFER_DURATION  (2 * 10000000LL) /* 内部に要求するバッファサイズ[100ナノ秒] */
+#define REQUESTED_SOUND_BUFFER_DURATION  (2 * 10000000LL) /* Internally requested buffer size [100 nanoseconds] */
 
-/* 初期化カウント */
+/* Initialize count */
 static int32_t st_initialize_count = 0;
-/* 初期化時のプレイヤーコンフィグ */
+/* Player config at initialization */
 static struct SRLAPlayerConfig st_config = { 0, };
-/* デコードしたデータのバッファ領域 */
+/* Buffer area for decoded data */
 static int32_t** st_decode_buffer = NULL;
-/* バッファ参照位置 */
-static uint32_t st_buffer_pos = DECODE_BUFFER_NUM_SAMPLES; /* 空の状態 */
-/* WASAPI制御用のハンドル */
+/* Buffer reference position */
+static uint32_t st_buffer_pos = DECODE_BUFFER_NUM_SAMPLES; /* Empty state */
+/* Handle for WASAPI control */
 static IAudioClient* audio_client = NULL;
 static IAudioRenderClient* audio_render_client = NULL;
 
-/* CLSID,IIDを自前定義 */
-/* 補足）C++ソースにしないと__uuidが使えない。C++にするならクラスを使う。しかしwindowsの事情だけで全てをC++プロジェクトにしたくない */
+/* Define your own CLSID and IID */
+/* Supplementary Note) __uuid cannot be used unless the source is C++. If you want to use C++, use classes. However, I don't want to make everything a C++ project just for Windows reasons. */
 static const CLSID st_CLSID_MMDeviceEnumerator = { 0xBCDE0395, 0xE52F, 0x467C, {0x8E,0x3D,0xC4,0x57,0x92,0x91,0x69,0x2E} };
 static const IID st_IID_IMMDeviceEnumerator = { 0xA95664D2, 0x9614, 0x4F35, {0xA7,0x46,0xDE,0x8D,0xB6,0x36,0x17,0xE6} };
 static const IID st_IID_IAudioClient = { 0x1CB9AD4C, 0xDBFA, 0x4C32, {0xB1,0x78,0xC2,0xF5,0x68,0xA7,0x03,0xB2} };
 static const IID st_IID_IAudioClockAdjustment = { 0xF6E4C0A0, 0x46D9, 0x4FB8, {0xBE,0x21,0x57,0xA3,0xEF,0x2B,0x62,0x6C} };
 static const IID st_IID_IAudioRenderClient = { 0xF294ACFC, 0x3146, 0x4483, {0xA7,0xBF,0xAD,0xDC,0xA7,0xC2,0x60,0xE2} };
 
-/* 初期化 この関数内でデバイスドライバの初期化を行い、再生開始 */
+/* Initialization This function initializes the device driver and starts playback. */
 void SRLAPlayer_Initialize(const struct SRLAPlayerConfig* config)
 {
     uint32_t i, buffer_frame_size;
@@ -44,40 +44,40 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig* config)
 
     assert(config != NULL);
 
-    /* 多重初期化は不可 */
+    /* Multiple initialization is not possible */
     if (st_initialize_count > 0) {
         return;
     }
 
-    /* コンフィグ取得 */
+    /* Get config */
     st_config = (*config);
 
-    /* デコード領域のバッファ確保 */
+    /* Allocate buffer for decoding area */
     st_decode_buffer = (int32_t**)malloc(sizeof(int32_t*) * st_config.num_channels);
     for (i = 0; i < st_config.num_channels; i++) {
         st_decode_buffer[i] = (int32_t*)malloc(sizeof(int32_t) * DECODE_BUFFER_NUM_SAMPLES);
         memset(st_decode_buffer[i], 0, sizeof(int32_t) * DECODE_BUFFER_NUM_SAMPLES);
     }
 
-    /* COMの初期化 */
+    /* Initialize COM */
     hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY);
     assert(SUCCEEDED(hr));
 
-    /* マルチメディアデバイス列挙子取得 */
+    /* Get multimedia device enumerator */
     hr = CoCreateInstance(&st_CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &st_IID_IMMDeviceEnumerator, &device_enumerator);
     assert(SUCCEEDED(hr));
 
-    /* デフォルトのデバイス取得 */
+    /* Get default device */
     hr = IMMDeviceEnumerator_GetDefaultAudioEndpoint(device_enumerator, eRender, eConsole, &audio_device);
     assert(SUCCEEDED(hr));
     IMMDeviceEnumerator_Release(device_enumerator);
 
-    /* クライアント取得 */
+    /* Get client */
     hr = IMMDevice_Activate(audio_device, &st_IID_IAudioClient, CLSCTX_ALL, NULL, &audio_client);
     assert(SUCCEEDED(hr));
     IMMDevice_Release(audio_device);
 
-    /* 出力フォーマット指定 */
+    /* Output format specification */
     ZeroMemory(&format, sizeof(WAVEFORMATEX));
     format.wFormatTag = WAVE_FORMAT_PCM;
     format.nChannels = st_config.num_channels;
@@ -86,7 +86,7 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig* config)
     format.nBlockAlign = (format.nChannels * format.wBitsPerSample) / 8;
     format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
 
-    /* 出力フォーマットが対応しているかチェック */
+    /* Check if the output format is supported */
     {
         WAVEFORMATEX closest_format, *pformat;
         pformat = &closest_format;
@@ -97,19 +97,19 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig* config)
         }
     }
 
-    /* クライアント初期化 */
+    /* Client initialization */
     hr = IAudioClient_Initialize(audio_client,
-            AUDCLNT_SHAREMODE_SHARED, /* 共有モード */
-            AUDCLNT_STREAMFLAGS_RATEADJUST /* レート変換を使う（入力波形に合わせたレートで再生する） */
-            | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM /* レート変換の自動挿入を有効にする */
-            | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, /* 良い品質のレート変換を使う */
+            AUDCLNT_SHAREMODE_SHARED, /* Shared mode */
+            AUDCLNT_STREAMFLAGS_RATEADJUST /* Use rate conversion (play at a rate that matches the input waveform) */
+            | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM /* Enable automatic insertion of rate conversions */
+            | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, /* Use good quality rate conversion */
             REQUESTED_SOUND_BUFFER_DURATION, 0, &format, NULL);
     if (FAILED(hr)) {
         fprintf(stderr, "Failed to initialize WASAPI client. \n");
         exit(2);
     }
 
-    /* サンプリングレート変換設定 */
+    /* Sampling rate conversion settings */
     {
         IAudioClockAdjustment* clock_adj;
         hr = IAudioClient_GetService(audio_client, &st_IID_IAudioClockAdjustment, &clock_adj);
@@ -120,15 +120,15 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig* config)
         IAudioClockAdjustment_Release(clock_adj);
     }
 
-    /* バッファを書き込む為のレンダラーを取得 */
+    /* Get the renderer to write the buffer to */
     hr = IAudioClient_GetService(audio_client, &st_IID_IAudioRenderClient, &audio_render_client);
     assert(SUCCEEDED(hr));
 
-    /* 書き込み用のバッファサイズ取得 */
+    /* Get the buffer size for writing */
     hr = IAudioClient_GetBufferSize(audio_client, &buffer_frame_size);
     assert(SUCCEEDED(hr));
 
-    /* 再生開始 */
+    /* Start playing */
     hr = IAudioClient_Start(audio_client);
     assert(SUCCEEDED(hr));
 
@@ -136,44 +136,44 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig* config)
 
     while (1) {
         int16_t* buffer;
-        /* レイテンシ: 小さすぎると途切れる, 大きすぎると遅延が大きくなる */
+        /* Latency: too small and you'll get choppy results, too large and you'll get a lot of delays */
         const uint32_t buffer_latency = buffer_frame_size / 50;
         uint32_t padding_size, available_buffer_frame_size;
 
-        /* パディングフレームサイズ（サウンドバッファ内に入っていてまだ出力されてないデータ量）の取得 */
+        /* Get padding frame size (amount of data in the sound buffer that has not yet been output) */
         hr = IAudioClient_GetCurrentPadding(audio_client, &padding_size);
         assert(SUCCEEDED(hr));
 
-        /* 書き込み可能なフレームサイズの取得 */
+        /* Get the writable frame size */
         available_buffer_frame_size = buffer_latency - padding_size;
 
-        /* 書き込み用バッファ取得 */
+        /* Get buffer for writing */
         hr = IAudioRenderClient_GetBuffer(audio_render_client, available_buffer_frame_size, &buffer);
         assert(SUCCEEDED(hr));
 
-        /* インターリーブしつつ書き込み チャンネル数分のサンプルのまとまりが1フレーム */
+        /* Write with interleaving. A group of samples for the number of channels is one frame */
         for (i = 0; i < available_buffer_frame_size; i++) {
             uint32_t ch;
-            /* バッファを使い切っていたらその場で次のデータを要求 */
+            /* If the buffer is full, request the next data immediately */
             if (st_buffer_pos >= DECODE_BUFFER_NUM_SAMPLES) {
                 st_config.sample_request_callback(st_decode_buffer, st_config.num_channels, DECODE_BUFFER_NUM_SAMPLES);
                 st_buffer_pos = 0;
             }
 
-            /* インターリーブしたバッファにデータを詰める */
+            /* Fill the interleaved buffer with data */
             for (ch = 0; ch < st_config.num_channels; ch++) {
                 *buffer++ = (int16_t)st_decode_buffer[ch][st_buffer_pos];
             }
             st_buffer_pos++;
         }
 
-        /* バッファの解放 */
+        /* Free the buffer */
         hr = IAudioRenderClient_ReleaseBuffer(audio_render_client, available_buffer_frame_size, 0);
         assert(SUCCEEDED(hr));
     }
 }
 
-/* 終了 初期化したときのリソースの開放はここで */
+/* End. Release the initialized resources here. */
 void SRLAPlayer_Finalize(void)
 {
     if (st_initialize_count == 1) {

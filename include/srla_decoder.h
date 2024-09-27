@@ -4,45 +4,45 @@
 #include "srla.h"
 #include "srla_stdint.h"
 
-/* デコーダコンフィグ */
+/* Decoder config */
 struct SRLADecoderConfig {
-    uint32_t max_num_channels; /* 最大チャンネル数 */
-    uint32_t max_num_parameters; /* 最大パラメータ数 */
-    uint8_t check_checksum; /* チェックサムによるデータ破損検査を行うか？ 1:ON それ以外:OFF */
+    uint32_t max_num_channels; /* Maximum number of channels */
+    uint32_t max_num_parameters; /* Maximum number of parameters */
+    uint8_t check_checksum; /* Do you want to check for data corruption using checksum? 1: ON Other: OFF */
 };
 
-/* デコーダハンドル */
+/* Decoder handle */
 struct SRLADecoder;
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-/* ヘッダデコード */
+/* Header decode */
 SRLAApiResult SRLADecoder_DecodeHeader(
         const uint8_t *data, uint32_t data_size, struct SRLAHeader *header);
 
-/* デコーダハンドルの作成に必要なワークサイズの計算 */
+/* Calculate the work size required to create a decoder handle */
 int32_t SRLADecoder_CalculateWorkSize(const struct SRLADecoderConfig *condig);
 
-/* デコーダハンドルの作成 */
+/* Create a decoder handle */
 struct SRLADecoder* SRLADecoder_Create(const struct SRLADecoderConfig *condig, void *work, int32_t work_size);
 
-/* デコーダハンドルの破棄 */
+/* Destroy the decoder handle */
 void SRLADecoder_Destroy(struct SRLADecoder *decoder);
 
-/* デコーダにヘッダをセット */
+/* Set the header in the decoder */
 SRLAApiResult SRLADecoder_SetHeader(
         struct SRLADecoder *decoder, const struct SRLAHeader *header);
 
-/* 単一データブロックデコード */
+/* Single data block decode */
 SRLAApiResult SRLADecoder_DecodeBlock(
         struct SRLADecoder *decoder,
         const uint8_t *data, uint32_t data_size,
         int32_t **buffer, uint32_t buffer_num_channels, uint32_t buffer_num_samples,
         uint32_t *decode_size, uint32_t *num_decode_samples);
 
-/* ヘッダを含めて全ブロックデコード */
+/* Decode all blocks including header */
 SRLAApiResult SRLADecoder_DecodeWhole(
         struct SRLADecoder *decoder,
         const uint8_t *data, uint32_t data_size,

@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include "srla_internal.h"
 
-/* NLZ計算のためのテーブル */
+/* Table for NLZ calculations */
 #define UNUSED 99
 static const uint32_t st_nlz10_table[64] = {
         32,     20,     19, UNUSED, UNUSED,     18, UNUSED,      7,
@@ -18,13 +18,13 @@ static const uint32_t st_nlz10_table[64] = {
 };
 #undef UNUSED
 
-/* round関数(C89で用意されていない) */
+/* round function (not provided in C89) */
 double SRLAUtility_Round(double d)
 {
     return (d >= 0.0) ? floor(d + 0.5) : -floor(-d + 0.5);
 }
 
-/* log2関数（C89で定義されていない） */
+/* log2 function (not defined in C89) */
 double SRLAUtility_Log2(double d)
 {
 #define INV_LOGE2 (1.4426950408889634)  /* 1 / log(2) */
@@ -32,14 +32,14 @@ double SRLAUtility_Log2(double d)
 #undef INV_LOGE2
 }
 
-/* フレッチャーのチェックサム計算 */
+/* Fletcher checksum calculation */
 uint16_t SRLAUtility_CalculateFletcher16CheckSum(const uint8_t *data, size_t data_size)
 {
-#define MAX_BLOCK_SIZE 5802 /* c1のmodが変化しないブロックサイズ */
-#define MOD255(x) (((x) + ((x) / 255)) & 0xFF) /* 255の剰余計算 */
+#define MAX_BLOCK_SIZE 5802 /* Block size where mod of c1 does not change */
+#define MOD255(x) (((x) + ((x) / 255)) & 0xFF) /* Calculate remainder of 255 */
     uint32_t c0, c1;
 
-    /* 引数チェック */
+    /* Argument check */
     SRLA_ASSERT(data != NULL);
 
     c0 = c1 = 0;
@@ -59,10 +59,10 @@ uint16_t SRLAUtility_CalculateFletcher16CheckSum(const uint8_t *data, size_t dat
 #undef MAX_BLOCK_SIZE
 }
 
-/* NLZ（最上位ビットから1に当たるまでのビット数）の計算 */
+/* Calculate NLZ (number of bits from the most significant bit to 1) */
 uint32_t SRLAUtility_NLZSoft(uint32_t x)
 {
-    /* ハッカーのたのしみ参照 */
+    /* Hacker's Fun Reference */
     x = x | (x >> 1);
     x = x | (x >> 2);
     x = x | (x >> 4);
@@ -74,10 +74,10 @@ uint32_t SRLAUtility_NLZSoft(uint32_t x)
     return st_nlz10_table[x >> 26];
 }
 
-/* 2の冪乗数に切り上げる */
+/* Round up to a power of 2 */
 uint32_t SRLAUtility_RoundUp2PoweredSoft(uint32_t val)
 {
-    /* ハッカーのたのしみ参照 */
+    /* Hacker's Fun Reference */
     val--;
     val |= val >> 1;
     val |= val >> 2;
@@ -173,7 +173,7 @@ void SRLAUtility_SRtoLRConversion(int32_t **buffer, uint32_t num_samples)
     }
 }
 
-/* プリエンファシスフィルタ初期化 */
+/* Pre-emphasis filter initialization */
 void SRLAPreemphasisFilter_Initialize(struct SRLAPreemphasisFilter *preem)
 {
     SRLA_ASSERT(preem != NULL);
@@ -181,7 +181,7 @@ void SRLAPreemphasisFilter_Initialize(struct SRLAPreemphasisFilter *preem)
     preem->coef = 0;
 }
 
-/* 多段プリエンファシスの係数計算 */
+/* Calculate the coefficient of multi-stage pre-emphasis */
 void SRLAPreemphasisFilter_CalculateMultiStageCoefficients(
     struct SRLAPreemphasisFilter *preem, uint32_t num_preem, const int32_t *buffer, uint32_t num_samples)
 {
@@ -190,14 +190,14 @@ void SRLAPreemphasisFilter_CalculateMultiStageCoefficients(
     double curr, succ;
     double double_coef[SRLA_NUM_PREEMPHASIS_FILTERS];
 
-    /* 注意）現段階では2回を前提 */
+    /* Note) At this stage, it is assumed to be 2 times */
     SRLA_STATIC_ASSERT(SRLA_NUM_PREEMPHASIS_FILTERS == 2);
     SRLA_ASSERT(num_preem == 2);
 
     SRLA_ASSERT(preem != NULL);
     SRLA_ASSERT(buffer != NULL);
 
-    /* 相関の計算 */
+    /* Calculate correlation */
     curr = buffer[0];
     succ = buffer[1];
     r0 = r1 = r2 = 0.0;
@@ -216,7 +216,7 @@ void SRLAPreemphasisFilter_CalculateMultiStageCoefficients(
     r0 += curr * curr;
     SRLA_ASSERT((r0 >= r1) && (r0 >= r2));
 
-    /* 分散が小さい場合は全て0を設定 */
+    /* If the variance is small, set all to 0 */
     if (r0 < 1e-6) {
         for (i = 0; i < SRLA_NUM_PREEMPHASIS_FILTERS; i++) {
             preem[i].coef = 0;
@@ -224,21 +224,21 @@ void SRLAPreemphasisFilter_CalculateMultiStageCoefficients(
         return;
     }
 
-    /* 分散(=0次相関)で正規化 */
+    /* Normalized by variance (=0th order correlation) */
     r1 /= r0;
     r2 /= r0;
     r0 = 1.0;
 
-    /* プリエンファシスの係数計算 */
+    /* Pre-emphasis coefficient calculation */
     {
-        /* 平方根の2乗 */
+        /* Square root squared */
         const double sqroot = r1 * r1 * (r0 - r2) * (r0 - r2) - 4.0 * (r0 * r0 - r1 * r1) * (r1 * r1 - r0 * r2);
         if (sqroot >= 0.0) {
             double det;
             double tmpcoef[2] = { 0.0, 0.0 };
             tmpcoef[1] = (r1 * (r0 - r2) - sqrt(sqroot)) / (2.0 * (r0 * r0 - r1 * r1));
             tmpcoef[0] = (tmpcoef[1] * r1 - r2) / (tmpcoef[1] * r0 - r1);
-            /* ヘッセ行列の行列式 */
+            /* Determinant of the Hessian matrix */
             det = 4.0 * (tmpcoef[0] * tmpcoef[0] * r0 - 2.0 * tmpcoef[0] * r1 + r0) * (tmpcoef[1] * tmpcoef[1] * r0 - 2.0 * tmpcoef[1] * r1 + r0);
             det -= 4.0 * pow(2.0 * tmpcoef[0] * tmpcoef[1] * r0 - 2.0 * tmpcoef[0] * r1 - 2.0 * tmpcoef[1] * r1 + r0 + r2, 2.0);
             if (det > 0.0) {
@@ -249,22 +249,22 @@ void SRLAPreemphasisFilter_CalculateMultiStageCoefficients(
                 double_coef[1] = r1 * (r1 * r1 - r2) / (1.0 - r1 * r1);
             }
         } else {
-            /* 複素数解の場合は従来通りの係数（1段ごとに分散最小）を設定 */
+            /* For complex solutions, set the coefficients as before (minimum variance for each stage) */
             double_coef[0] = r1;
             double_coef[1] = r1 * (r1 * r1 - r2) / (1.0 - r1 * r1);
         }
     }
 
-    /* 固定小数化 */
+    /* Fixed-point number */
     for (i = 0; i < SRLA_NUM_PREEMPHASIS_FILTERS; i++) {
         int32_t coef = (int32_t)SRLAUtility_Round(double_coef[i] * pow(2.0f, SRLA_PREEMPHASIS_COEF_SHIFT));
-        /* 丸め込み */
+        /* Rounding */
         coef = SRLAUTILITY_INNER_VALUE(coef, -(1 << SRLA_PREEMPHASIS_COEF_SHIFT), (1 << SRLA_PREEMPHASIS_COEF_SHIFT) - 1);
         preem[i].coef = coef;
     }
 }
 
-/* プリエンファシス */
+/* Pre-emphasis */
 void SRLAPreemphasisFilter_Preemphasis(
         struct SRLAPreemphasisFilter *preem, int32_t *buffer, uint32_t num_samples)
 {
@@ -283,7 +283,7 @@ void SRLAPreemphasisFilter_Preemphasis(
     preem->prev = prev;
 }
 
-/* デエンファシスを複数回適用 */
+/* Apply de-emphasis multiple times */
 void SRLAPreemphasisFilter_MultiStageDeemphasis(
     struct SRLAPreemphasisFilter *preem, uint32_t num_preem, int32_t *buffer, uint32_t num_samples)
 {
@@ -291,7 +291,7 @@ void SRLAPreemphasisFilter_MultiStageDeemphasis(
     const int32_t c0 = preem[0].coef;
     const int32_t c1 = preem[1].coef;
 
-    /* 注意）現段階では2回を前提 */
+    /* Note) At this stage, it is assumed to be 2 times */
     SRLA_STATIC_ASSERT(SRLA_NUM_PREEMPHASIS_FILTERS == 2);
     SRLA_ASSERT(num_preem == 2);
 

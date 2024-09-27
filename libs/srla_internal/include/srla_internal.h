@@ -5,101 +5,101 @@
 #include "srla_stdint.h"
 #include "static_huffman.h"
 
-/* 本ライブラリのメモリアラインメント */
+/* Memory alignment of this library */
 #define SRLA_MEMORY_ALIGNMENT 16
-/* ブロック先頭の同期コード */
+/* Synchronization code at the beginning of a block */
 #define SRLA_BLOCK_SYNC_CODE 0xFFFF
 
-/* 内部エンコードパラメータ */
-/* プリエンファシスの係数シフト量 */
+/* Internal encoding parameters */
+/* Pre-emphasis coefficient shift amount */
 #define SRLA_PREEMPHASIS_COEF_SHIFT 4
-/* プリエンファシスフィルタの適用回数 */
+/* Number of times to apply pre-emphasis filter */
 #define SRLA_NUM_PREEMPHASIS_FILTERS 2
-/* LPC係数のビット幅 */
+/* Bit width of LPC coefficients */
 #define SRLA_LPC_COEFFICIENT_BITWIDTH 8
-/* LPC係数右シフト量のビット幅 */
+/* Bit width of LPC coefficient right shift amount */
 #define SRLA_RSHIFT_LPC_COEFFICIENT_BITWIDTH 4
-/* (LPC係数次数-1)のビット幅 */
+/* (LPC coefficient order - 1) bit width */
 #define SRLA_LPC_COEFFICIENT_ORDER_BITWIDTH 8
-/* LPCのリッジ正則化パラメータ */
+/* Ridge regularization parameter for LPC */
 #define SRLA_LPC_RIDGE_REGULARIZATION_PARAMETER 1e-5
 
-/* アサートマクロ */
+/* Assert macro */
 #ifdef NDEBUG
-/* 未使用変数警告を明示的に回避 */
+/* Explicitly avoid unused variable warnings */
 #define SRLA_ASSERT(condition) ((void)(condition))
 #else
 #include <assert.h>
 #define SRLA_ASSERT(condition) assert(condition)
 #endif
 
-/* 静的アサートマクロ */
+/* static assert macro */
 #define SRLA_STATIC_ASSERT(expr) extern void assertion_failed(char dummy[(expr) ? 1 : -1])
 
-/* ブロックデータタイプ */
+/* Block data type */
 typedef enum SRLABlockDataTypeTag {
-    SRLA_BLOCK_DATA_TYPE_COMPRESSDATA  = 0, /* 圧縮済みデータ */
-    SRLA_BLOCK_DATA_TYPE_SILENT        = 1, /* 無音データ     */
-    SRLA_BLOCK_DATA_TYPE_RAWDATA       = 2, /* 生データ       */
-    SRLA_BLOCK_DATA_TYPE_INVALID       = 3  /* 無効           */
+    SRLA_BLOCK_DATA_TYPE_COMPRESSDATA  = 0, /* Compressed data */
+    SRLA_BLOCK_DATA_TYPE_SILENT        = 1, /* Silence data */
+    SRLA_BLOCK_DATA_TYPE_RAWDATA       = 2, /* Raw data */
+    SRLA_BLOCK_DATA_TYPE_INVALID       = 3  /* invalid           */
 } SRLABlockDataType;
 
-/* マルチチャンネル処理の決定方法 */
+/* How to determine multi-channel processing */
 typedef enum SRLAChannelProcessMethodTacticsTag {
-    SRLA_CH_PROCESS_METHOD_TACTICS_NONE = 0, /* 何もしない */
-    SRLA_CH_PROCESS_METHOD_TACTICS_MS_FIXED, /* ステレオMS処理を常に選択 */
-    SRLA_CH_PROCESS_METHOD_TACTICS_ADAPTIVE, /* 適応的にLR,LS,RS,MSを選択 */
-    SRLA_CH_PROCESS_METHOD_TACTICS_INVALID   /* 無効値 */
+    SRLA_CH_PROCESS_METHOD_TACTICS_NONE = 0, /* Do nothing */
+    SRLA_CH_PROCESS_METHOD_TACTICS_MS_FIXED, /* Always select stereo MS processing */
+    SRLA_CH_PROCESS_METHOD_TACTICS_ADAPTIVE, /* Adaptively select LR, LS, RS, MS */
+    SRLA_CH_PROCESS_METHOD_TACTICS_INVALID   /* Invalid value */
 } SRLAChannelProcessMethodTactics;
 
-/* マルチチャンネル処理法 */
+/* Multi-channel processing method */
 typedef enum SRLAChannelProcessMethodTag {
-    SRLA_CH_PROCESS_METHOD_NONE = 0, /* 何もしない */
-    SRLA_CH_PROCESS_METHOD_MS = 1, /* ステレオMS処理 */
-    SRLA_CH_PROCESS_METHOD_LS = 2, /* ステレオLS処理 */
-    SRLA_CH_PROCESS_METHOD_SR = 3, /* ステレオSR処理 */
-    SRLA_CH_PROCESS_METHOD_INVALID /* 無効値 */
+    SRLA_CH_PROCESS_METHOD_NONE = 0, /* Do nothing */
+    SRLA_CH_PROCESS_METHOD_MS = 1, /* Stereo MS processing */
+    SRLA_CH_PROCESS_METHOD_LS = 2, /* Stereo LS processing */
+    SRLA_CH_PROCESS_METHOD_SR = 3, /* Stereo SR processing */
+    SRLA_CH_PROCESS_METHOD_INVALID /* Invalid value */
 } SRLAChannelProcessMethod;
 
-/* LPCの次数決定方法 */
+/* How to determine the LPC order */
 typedef enum SRLAChannelLPCOrderDecisionTacticsTag {
-    SRLA_LPC_ORDER_DECISION_TACTICS_MAX_FIXED = 0, /* 最大次数を常に選択 */
-    SRLA_LPC_ORDER_DECISION_TACTICS_BRUTEFORCE_SEARCH, /* 素朴な網羅探索 */
-    SRLA_LPC_ORDER_DECISION_TACTICS_BRUTEFORCE_ESTIMATION, /* 残差分散の推定による網羅探索 */
-    SRLA_LPC_ORDER_DECISION_TACTICS_INVALID  /* 無効値 */
+    SRLA_LPC_ORDER_DECISION_TACTICS_MAX_FIXED = 0, /* Always choose the highest order */
+    SRLA_LPC_ORDER_DECISION_TACTICS_BRUTEFORCE_SEARCH, /* Simple exhaustive search */
+    SRLA_LPC_ORDER_DECISION_TACTICS_BRUTEFORCE_ESTIMATION, /* Exhaustive search by estimating residual variance */
+    SRLA_LPC_ORDER_DECISION_TACTICS_INVALID  /* Invalid value */
 } SRLAChannelLPCOrderDecisionTactics;
 
-/* 内部エラー型 */
+/* Internal error type */
 typedef enum SRLAErrorTag {
     SRLA_ERROR_OK = 0, /* OK */
-    SRLA_ERROR_NG, /* 分類不能な失敗 */
-    SRLA_ERROR_INVALID_ARGUMENT, /* 不正な引数 */
-    SRLA_ERROR_INVALID_FORMAT, /* 不正なフォーマット       */
-    SRLA_ERROR_INSUFFICIENT_BUFFER, /* バッファサイズが足りない */
-    SRLA_ERROR_INSUFFICIENT_DATA /* データサイズが足りない   */
+    SRLA_ERROR_NG, /* Unclassifiable failure */
+    SRLA_ERROR_INVALID_ARGUMENT, /* Invalid argument */
+    SRLA_ERROR_INVALID_FORMAT, /* Invalid format */
+    SRLA_ERROR_INSUFFICIENT_BUFFER, /* Buffer size is insufficient */
+    SRLA_ERROR_INSUFFICIENT_DATA /* Data size is insufficient */
 } SRLAError;
 
-/* パラメータプリセット */
+/* Parameter presets */
 struct SRLAParameterPreset {
-    uint32_t max_num_parameters; /* 最大パラメータ数 */
-    SRLAChannelProcessMethodTactics ch_process_method_tactics; /* マルチチャンネル処理の決定法 */
-    SRLAChannelLPCOrderDecisionTactics lpc_order_tactics; /* LPCの次数決定法 */
-    uint32_t svr_max_num_iterations; /* SVRの最大繰り返し回数 */
-    const double *margin_list; /* マージンリスト */
-    uint32_t margin_list_size; /* マージンリストサイズ */
+    uint32_t max_num_parameters; /* Maximum number of parameters */
+    SRLAChannelProcessMethodTactics ch_process_method_tactics; /* How to determine multi-channel processing */
+    SRLAChannelLPCOrderDecisionTactics lpc_order_tactics; /* LPC order determination method */
+    uint32_t svr_max_num_iterations; /* Maximum number of SVR iterations */
+    const double *margin_list; /* margin list */
+    uint32_t margin_list_size; /* margin list size */
 };
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* パラメータプリセット配列 */
+/* Parameter preset array */
 extern const struct SRLAParameterPreset g_srla_parameter_preset[];
 
-/* パラメータ符号用のハフマン木を取得 */
+/* Get the Huffman tree for the parameter codes */
 const struct StaticHuffmanTree* SRLA_GetParameterHuffmanTree(void);
 
-/* 和をとったパラメータ符号用のハフマン木を取得 */
+/* Get the Huffman tree for the summed parameter codes */
 const struct StaticHuffmanTree *SRLA_GetSumParameterHuffmanTree(void);
 
 

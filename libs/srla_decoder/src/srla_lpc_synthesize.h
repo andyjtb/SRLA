@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-/* LPC係数により合成(in-place) */
+/* Synthesis by LPC coefficients (in-place) */
 void SRLALPC_Synthesize(
     int32_t *data, uint32_t num_samples,  const int32_t *coef, uint32_t coef_order, uint32_t coef_rshift);
 

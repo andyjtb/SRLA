@@ -3,47 +3,47 @@
 
 #include "srla_stdint.h"
 
-/* フォーマットバージョン */
+/* Format version */
 #define SRLA_FORMAT_VERSION         5
 
-/* コーデックバージョン */
+/* Codec version */
 #define SRLA_CODEC_VERSION          8
 
-/* ヘッダサイズ */
+/* Header size */
 #define SRLA_HEADER_SIZE            29
 
-/* 処理可能な最大チャンネル数 */
+/* Maximum number of channels that can be processed */
 #define SRLA_MAX_NUM_CHANNELS       8
 
-/* 最大係数サイズ */
+/* Maximum coefficient size */
 #define SRLA_MAX_COEFFICIENT_ORDER  256
 
-/* パラメータプリセット数 */
+/* Number of parameter presets */
 #define SRLA_NUM_PARAMETER_PRESETS  5
 
 
-/* API結果型 */
+/* API result type */
 typedef enum SRLAApiResultTag {
-    SRLA_APIRESULT_OK = 0,                  /* 成功                         */
-    SRLA_APIRESULT_INVALID_ARGUMENT,        /* 無効な引数                   */
-    SRLA_APIRESULT_INVALID_FORMAT,          /* 不正なフォーマット           */
-    SRLA_APIRESULT_INSUFFICIENT_BUFFER,     /* バッファサイズが足りない     */
-    SRLA_APIRESULT_INSUFFICIENT_DATA,       /* データが足りない             */
-    SRLA_APIRESULT_PARAMETER_NOT_SET,       /* パラメータがセットされてない */
-    SRLA_APIRESULT_DETECT_DATA_CORRUPTION,  /* データ破損を検知した         */
-    SRLA_APIRESULT_NG                       /* 分類不能な失敗               */
+    SRLA_APIRESULT_OK = 0,                  /* success */
+    SRLA_APIRESULT_INVALID_ARGUMENT,        /* Invalid argument */
+    SRLA_APIRESULT_INVALID_FORMAT,          /* Invalid format */
+    SRLA_APIRESULT_INSUFFICIENT_BUFFER,     /* Buffer size is insufficient */
+    SRLA_APIRESULT_INSUFFICIENT_DATA,       /* Not enough data */
+    SRLA_APIRESULT_PARAMETER_NOT_SET,       /* No parameters set */
+    SRLA_APIRESULT_DETECT_DATA_CORRUPTION,  /* Data corruption detected */
+    SRLA_APIRESULT_NG                       /* Unclassifiable failure */
 } SRLAApiResult;
 
-/* ヘッダ情報 */
+/* Header information */
 struct SRLAHeader {
-    uint32_t format_version;                        /* フォーマットバージョン         */
-    uint32_t codec_version;                         /* エンコーダバージョン           */
-    uint16_t num_channels;                          /* チャンネル数                   */
-    uint32_t num_samples;                           /* 1チャンネルあたり総サンプル数  */
-    uint32_t sampling_rate;                         /* サンプリングレート             */
-    uint16_t bits_per_sample;                       /* サンプルあたりビット数         */
-    uint32_t max_num_samples_per_block;             /* ブロックあたり最大サンプル数   */
-    uint8_t preset;                                 /* パラメータプリセット         */
+    uint32_t format_version;                        /* Format version */
+    uint32_t codec_version;                         /* Encoder version */
+    uint16_t num_channels;                          /* Number of channels */
+    uint32_t num_samples;                           /* Total number of samples per channel */
+    uint32_t sampling_rate;                         /* Sampling rate */
+    uint16_t bits_per_sample;                       /* Number of bits per sample */
+    uint32_t max_num_samples_per_block;             /* Maximum number of samples per block */
+    uint8_t preset;                                 /* Parameter presets */
 };
 
 #endif /* SRLA_H_INCLUDED */

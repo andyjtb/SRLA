@@ -4,29 +4,29 @@
 #include <stdint.h>
 #include "bit_stream.h"
 
-/* 符号化ハンドル */
+/* encoding handle */
 struct SRLACoder;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* 符号化ハンドルの作成に必要なワークサイズの計算 */
+/* Calculate the work size required to create the encoding handle */
 int32_t SRLACoder_CalculateWorkSize(uint32_t max_num_samples);
 
-/* 符号化ハンドルの作成 */
+/* Create an encoding handle */
 struct SRLACoder* SRLACoder_Create(uint32_t max_num_samples, void *work, int32_t work_size);
 
-/* 符号化ハンドルの破棄 */
+/* Destroy the encoding handle */
 void SRLACoder_Destroy(struct SRLACoder *coder);
 
-/* 符号長計算 */
+/* Code length calculation */
 uint32_t SRLACoder_ComputeCodeLength(struct SRLACoder *coder, const int32_t *data, uint32_t num_samples);
 
-/* 符号付き整数配列の符号化 */
+/* Encoding a signed integer array */
 void SRLACoder_Encode(struct SRLACoder *coder, struct BitStream *stream, const int32_t *data, uint32_t num_samples);
 
-/* 符号付き整数配列の復号 */
+/* Decode signed integer array */
 void SRLACoder_Decode(struct BitStream *stream, int32_t *data, uint32_t num_samples);
 
 #ifdef __cplusplus

@@ -9,21 +9,21 @@
 #define BUFFER_SIZE (8 * 1024)
 #define DECODE_BUFFER_NUM_SAMPLES (1024)
 
-/* CoreAudioの出力コールバック関数 */
+/* CoreAudio output callback function */
 static void SRLAPlayer_CoreAudioCallback(void *custom_data, AudioQueueRef queue, AudioQueueBufferRef buffer);
 
-/* 初期化カウント */
+/* Initialize count */
 static int32_t st_initialize_count = 0;
-/* 初期化時のプレイヤーコンフィグ */
+/* Player config at initialization */
 static struct SRLAPlayerConfig st_config = { 0, };
-/* デコードしたデータのバッファ領域 */
+/* Buffer area for decoded data */
 static int32_t **st_decode_buffer = NULL;
-/* バッファ参照位置 */
-static uint32_t st_buffer_pos = DECODE_BUFFER_NUM_SAMPLES; /* 空の状態 */
-/* 出力キューの参照 */
+/* Buffer reference position */
+static uint32_t st_buffer_pos = DECODE_BUFFER_NUM_SAMPLES; /* Empty state */
+/* Reference to output queue */
 static AudioQueueRef queue = NULL;
 
-/* 初期化 この関数内でデバイスドライバの初期化を行い、再生開始 */
+/* Initialization This function initializes the device driver and starts playback. */
 void SRLAPlayer_Initialize(const struct SRLAPlayerConfig *config)
 {
     uint32_t i;
@@ -32,66 +32,68 @@ void SRLAPlayer_Initialize(const struct SRLAPlayerConfig *config)
 
     assert(config != NULL);
 
-    /* 多重初期化は不可 */
+    /* Multiple initialization is not possible */
     if (st_initialize_count > 0) {
         return;
     }
 
-    /* コンフィグ取得 */
+    /* Get config */
     st_config = (*config);
 
-    /* フォーマットに属性を詰める */
-    format.mSampleRate       = st_config.sampling_rate; /* サンプリングレート */
-    format.mFormatID         = kAudioFormatLinearPCM; /* フォーマット: PCM */
-    format.mFormatFlags      = kLinearPCMFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked; /* フォーマットフラグの指定. */
-    format.mBitsPerChannel   = st_config.bits_per_sample; /* チャンネル当たりのビット数 */
-    format.mChannelsPerFrame = st_config.num_channels; /* チャンネル数 */
-    format.mBytesPerFrame    = (st_config.bits_per_sample * st_config.num_channels) / 8; /* 1フレーム（全てのフレームの1サンプル）のバイト数 */
-    format.mFramesPerPacket  = 1; /* パケットあたりのフレーム数 */
-    format.mBytesPerPacket   = format.mBytesPerFrame * format.mFramesPerPacket; /* パケット当たりのバイト数 */
-    format.mReserved         = 0; /* （予約領域） */
+    /* Fill the format with attributes */
+    format.mSampleRate       = st_config.sampling_rate; /* Sampling rate */
+    format.mFormatID         = kAudioFormatLinearPCM; /* Format: PCM */
+    format.mFormatFlags      = kLinearPCMFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked; /* Specify format flags. */
+    format.mBitsPerChannel   = st_config.bits_per_sample; /* Number of bits per channel */
+    format.mChannelsPerFrame = st_config.num_channels; /* Number of channels */
+    format.mBytesPerFrame    = (st_config.bits_per_sample * st_config.num_channels) / 8; /* Number of bytes in one frame (one sample of all frames) */
+    format.mFramesPerPacket  = 1; /* Number of frames per packet */
+    format.mBytesPerPacket   = format.mBytesPerFrame * format.mFramesPerPacket; /* Number of bytes per packet */
+    format.mReserved         = 0; /* (reserved area) */
 
-    /* デコード領域のバッファ確保 */
+    /* Allocate buffer for decoding area */
     st_decode_buffer = (int32_t **)malloc(sizeof(int32_t *) * st_config.num_channels);
     for (i = 0; i < st_config.num_channels; i++) {
         st_decode_buffer[i] = (int32_t *)malloc(sizeof(int32_t) * DECODE_BUFFER_NUM_SAMPLES);
         memset(st_decode_buffer[i], 0, sizeof(int32_t) * DECODE_BUFFER_NUM_SAMPLES);
     }
 
-    /* 新しい出力キューを生成 */
+    /* Create a new output queue */
     AudioQueueNewOutput(&format,
             SRLAPlayer_CoreAudioCallback, NULL, CFRunLoopGetCurrent(), kCFRunLoopCommonModes, 0, &queue);
 
     for (i = 0; i < NUM_BUFFERS; i++) {
-        /* 指定したキューのバッファの領域を割り当てる */
+        /* Allocate buffer space for the specified queue */
         AudioQueueAllocateBuffer(queue, BUFFER_SIZE, &buffers[i]);
-        /* サイズをセット */
+        /* Set the size */
         buffers[i]->mAudioDataByteSize = BUFFER_SIZE;
-        /* 一発目のデータを出力 */
+        /* Output the first data */
         SRLAPlayer_CoreAudioCallback(NULL, queue, buffers[i]);
     }
 
-    /* キューの再生開始 */
+    /* Start playing the cue */
     AudioQueueStart(queue, NULL);
 
-    /* スレッドのループ処理開始
-    * この関数が終わってもスレッド処理が回る（監視ループというらしい） */
+    /*
+/* Start of thread loop processing
+* The thread processing will continue even after this function ends (apparently called a monitor loop) */
+*/
     CFRunLoopRun();
 
     st_initialize_count++;
 }
 
-/* 終了 初期化したときのリソースの開放はここで */
+/* End. Release the initialized resources here. */
 void SRLAPlayer_Finalize(void)
 {
     if (st_initialize_count == 1) {
         uint32_t i;
-        /* キューの停止・破棄 */
+        /* Stop and discard the queue */
         AudioQueueStop(queue, false);
         AudioQueueDispose(queue, false);
         CFRunLoopStop(CFRunLoopGetCurrent());
 
-        /* デコード領域のバッファ開放 */
+        /* Free the buffer for the decoding area */
         for (i = 0; i < st_config.num_channels; i++) {
             free(st_decode_buffer[i]);
         }
@@ -101,7 +103,7 @@ void SRLAPlayer_Finalize(void)
     st_initialize_count--;
 }
 
-/* CoreAudioの出力コールバック関数 */
+/* CoreAudio output callback function */
 static void SRLAPlayer_CoreAudioCallback(void *custom_data, AudioQueueRef queue, AudioQueueBufferRef buffer)
 {
     uint32_t i, ch;
@@ -109,19 +111,19 @@ static void SRLAPlayer_CoreAudioCallback(void *custom_data, AudioQueueRef queue,
     const uint32_t num_buffer_samples = BUFFER_SIZE / sizeof(int16_t);
 
     for (i = 0; i < num_buffer_samples; i += st_config.num_channels) {
-        /* バッファを使い切っていたらその場で次のデータを要求 */
+        /* If the buffer is full, request the next data immediately */
         if (st_buffer_pos >= DECODE_BUFFER_NUM_SAMPLES) {
             st_config.sample_request_callback(st_decode_buffer, st_config.num_channels, DECODE_BUFFER_NUM_SAMPLES);
             st_buffer_pos = 0;
         }
 
-        /* インターリーブしたバッファにデータを詰める */
+        /* Fill the interleaved buffer with data */
         for (ch = 0; ch < st_config.num_channels; ch++) {
             ch_interleaved_buffer[i + ch] = (int16_t)st_decode_buffer[ch][st_buffer_pos];
         }
         st_buffer_pos++;
     }
 
-    /* バッファをエンキュー */
+    /* Enqueue the buffer */
     AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
 }

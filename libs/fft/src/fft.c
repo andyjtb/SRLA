@@ -4,7 +4,7 @@
 #include <math.h>
 #include <assert.h>
 
-/* インラインキーワードを定義 */
+/* Define inline keywords */
 #if defined(_MSC_VER)
 #define FFT_INLINE inline
 #elif defined(__GNUC__)
@@ -13,29 +13,33 @@
 #define FFT_INLINE
 #endif
 
-/* 円周率 */
+/* Pi */
 #define FFT_PI 3.14159265358979323846
 
-/* 複素数型 */
+/* Complex number type */
 typedef struct FFTComplex {
-    double real; /* 実部 */
-    double imag; /* 虚部 */
+    double real; /* real part */
+    double imag; /* imaginary part */
 } FFTComplex;
 
-/* FFT 正規化は行いません
-* n 系列長
-* flag -1:FFT, 1:IFFT
-* x フーリエ変換する系列(入出力)
-* y 作業用配列(xと同一サイズ)
+/*
+/* FFT normalization is not performed
+* n sequence length
+* flag -1: FFT, 1: IFFT
+* x sequence to be Fourier transformed (input/output)
+* y work array (same size as x)
+*/
 */
 static void FFT_ComplexFFT(int n, int flag, FFTComplex *x, FFTComplex *y);
 
-/* 複素数型のサイズチェック doubleの配列を複素数型とみなして計算するため
-* 構造体にパディングなどが入ってしまうとサイズが合わなくなる
-* 合わない場合は#pragmaで構造体をパックする */
+/*
+/* Check the size of complex numbers. Double arrays are treated as complex numbers for calculations.
+* If padding is added to the structure, the size will not match.
+* If it does not match, pack the structure with #pragma. */
+*/
 extern char FFT_checksize[(sizeof(FFTComplex) == (sizeof(double) * 2)) ? 1 : -1];
 
-/* 複素数加算 */
+/* Complex addition */
 static FFT_INLINE FFTComplex FFTComplex_Add(FFTComplex a, FFTComplex b)
 {
     FFTComplex ret;
@@ -44,7 +48,7 @@ static FFT_INLINE FFTComplex FFTComplex_Add(FFTComplex a, FFTComplex b)
     return ret;
 }
 
-/* 複素数減算 */
+/* Complex subtraction */
 static FFT_INLINE FFTComplex FFTComplex_Sub(FFTComplex a, FFTComplex b)
 {
     FFTComplex ret;
@@ -53,7 +57,7 @@ static FFT_INLINE FFTComplex FFTComplex_Sub(FFTComplex a, FFTComplex b)
     return ret;
 }
 
-/* 複素数乗算 */
+/* Complex multiplication */
 static FFT_INLINE FFTComplex FFTComplex_Mul(FFTComplex a, FFTComplex b)
 {
     FFTComplex ret;
@@ -62,19 +66,21 @@ static FFT_INLINE FFTComplex FFTComplex_Mul(FFTComplex a, FFTComplex b)
     return ret;
 }
 
-/* FFT 正規化は行いません
-* n 系列長
-* flag -1:FFT, 1:IFFT
-* x フーリエ変換する系列(入出力)
-* y 作業用配列(xと同一サイズ)
+/*
+/* FFT normalization is not performed
+* n sequence length
+* flag -1: FFT, 1: IFFT
+* x sequence to be Fourier transformed (input/output)
+* y work array (same size as x)
+*/
 */
 static void FFT_ComplexFFT(int n, const int flag, FFTComplex *x, FFTComplex *y)
 {
     FFTComplex *tmp, *src = x;
     int p, q;
-    int s = 1; /* ストライド */
+    int s = 1; /* stride */
 
-    /* 4基底 Stockham FFT */
+    /* radix 4 Stockham FFT */
     while (n > 2) {
         const int n1 = (n >> 2);
         const int n2 = (n >> 1);
@@ -85,8 +91,9 @@ static void FFT_ComplexFFT(int n, const int flag, FFTComplex *x, FFTComplex *y)
         wdelta.real = cos(theta0); wdelta.imag = flag * sin(theta0);
         w1p.real = 1.0; w1p.imag = 0.0;
         for (p = 0; p < n1; p++) {
-            /* より精密 しかしsin,cosの関数呼び出しがある
-            * const FFTComplex w1p = { cos(p * theta0), flag * sin(p * theta0) }; */
+            /*
+/* More precise, but has sin and cos function calls. * const FFTComplex w1p = { cos(p * theta0), flag * sin(p * theta0) }; */
+*/
             const FFTComplex w2p = FFTComplex_Mul(w1p, w1p);
             const FFTComplex w3p = FFTComplex_Mul(w1p, w2p);
             for (q = 0; q < s; q++) {
@@ -103,7 +110,7 @@ static void FFT_ComplexFFT(int n, const int flag, FFTComplex *x, FFTComplex *y)
                 y[q + s * ((p << 2) + 2)] = FFTComplex_Mul(w2p, FFTComplex_Sub(apc,  bpd));
                 y[q + s * ((p << 2) + 3)] = FFTComplex_Mul(w3p, FFTComplex_Add(amc, jbmd));
             }
-            /* 回転係数を進める */
+            /* Advance rotation factor */
             w1p = FFTComplex_Mul(w1p, wdelta);
         }
         n >>= 2;
@@ -127,22 +134,26 @@ static void FFT_ComplexFFT(int n, const int flag, FFTComplex *x, FFTComplex *y)
     }
 }
 
-/* FFT 正規化は行いません
-* n 系列長
-* flag -1:FFT, 1:IFFT
-* x フーリエ変換する系列(入出力 2nサイズ必須, 偶数番目に実数部, 奇数番目に虚数部)
-* y 作業用配列(xと同一サイズ)
+/*
+/* FFT normalization is not performed
+* n sequence length
+* flag -1: FFT, 1: IFFT
+* x sequence to be Fourier transformed (input/output size 2n required, real part in even numbers, imaginary part in odd numbers)
+* y work array (same size as x)
+*/
 */
 void FFT_FloatFFT(int n, const int flag, double *x, double *y)
 {
     FFT_ComplexFFT(n, flag, (FFTComplex *)x, (FFTComplex *)y);
 }
 
-/* 実数列のFFT 正規化は行いません 正規化定数は2/n
-* n 系列長
-* flag -1:FFT, 1:IFFT
-* x フーリエ変換する系列(入出力 nサイズ必須, FFTの場合, x[0]に直流成分の実部, x[1]に最高周波数成分の虚数部が入る)
-* y 作業用配列(xと同一サイズ)
+/*
+/* FFT of real sequence. No normalization is performed. Normalization constant is 2/n
+* n sequence length
+* flag -1: FFT, 1: IFFT
+* x sequence to be Fourier transformed (input/output size n required, in case of FFT, x[0] contains real part of DC component, x[1] contains imaginary part of highest frequency component)
+* y work array (same size as x)
+*/
 */
 void FFT_RealFFT(int n, const int flag, double *x, double *y)
 {
@@ -153,17 +164,17 @@ void FFT_RealFFT(int n, const int flag, double *x, double *y)
     const double c2 = flag * 0.5;
     double wr, wi, wtmp;
 
-    /* FFTの場合は先に変換 */
+    /* In case of FFT, convert first */
     if (flag == -1) {
         FFT_FloatFFT(n >> 1, -1, x, y);
     }
 
-    /* 回転因子初期化 */
+    /* Rotation factor initialization */
     wr = 1.0 + wpr;
     wi = wpi;
 
-    /* スペクトルの対称性を使用し */
-    /* FFTの場合は最終結果をまとめ、IFFTの場合は元に戻るよう整理 */
+    /* Using spectral symmetry */
+    /* In the case of FFT, we put together the final results, and in the case of IFFT, we rearrange them back to their original state */
     for (i = 1; i <= (n >> 2); i++) {
         const int i1 = (i << 1);
         const int i2 = i1 + 1;
@@ -177,13 +188,13 @@ void FFT_RealFFT(int n, const int flag, double *x, double *y)
         x[i2] =  h1i + (wr * h2i) + (wi * h2r);
         x[i3] =  h1r - (wr * h2r) + (wi * h2i);
         x[i4] = -h1i + (wr * h2i) + (wi * h2r);
-        /* 回転因子更新 */
+        /* Update twiddle factors */
         wtmp = wr;
         wr += wtmp * wpr - wi * wpi;
         wi += wi * wpr + wtmp * wpi;
     }
 
-    /* 直流成分/最高周波数成分 */
+    /* DC component/highest frequency component */
     {
         const double h1r = x[0];
         if (flag == -1) {

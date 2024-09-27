@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-/* 出力要求コールバック */
+/* Output request callback */
 typedef void (*SRLASampleRequestCallback)(
         int32_t **buffer, uint32_t num_channels, uint32_t num_samples);
 
-/* プレイヤー初期化コンフィグ */
+/* Player initialization config */
 struct SRLAPlayerConfig {
     uint32_t sampling_rate;
     uint16_t num_channels;
@@ -19,10 +19,10 @@ struct SRLAPlayerConfig {
 extern "C" {
 #endif
 
-/* 初期化 この関数内でデバイスドライバの初期化を行い、再生開始 */
+/* Initialization This function initializes the device driver and starts playback. */
 void SRLAPlayer_Initialize(const struct SRLAPlayerConfig *config);
 
-/* 終了 初期化したときのリソースの開放はここで */
+/* End. Release the initialized resources here. */
 void SRLAPlayer_Finalize(void);
 
 #ifdef __cplusplus

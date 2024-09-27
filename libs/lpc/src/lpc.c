@@ -9,25 +9,25 @@
 
 #include "fft.h"
 
-/* メモリアラインメント */
+/* memory alignment */
 #define LPC_ALIGNMENT 16
-/* 円周率 */
+/* Pi */
 #define LPC_PI 3.1415926535897932384626433832795029
-/* 残差絶対値の最小値 */
+/* Minimum absolute residual value */
 #define LPCAF_RESIDUAL_EPSILON 1e-6
 
-/* nの倍数切り上げ */
+/* Round up to the next multiple of n */
 #define LPC_ROUNDUP(val, n) ((((val) + ((n) - 1)) / (n)) * (n))
-/* 符号関数 */
+/* Sign function */
 #define LPC_SIGN(val) (((val) > 0) - ((val) < 0))
-/* 最大値の取得 */
+/* Get the maximum value */
 #define LPC_MAX(a,b) (((a) > (b)) ? (a) : (b))
-/* 絶対値の取得 */
+/* Get absolute value */
 #define LPC_ABS(val) (((val) > 0) ? (val) : -(val))
-/* 軟閾値作用素 */
+/* Soft threshold operator */
 #define LPC_SOFT_THRESHOLD(in, epsilon) (LPC_SIGN(in) * LPC_MAX(LPC_ABS(in) - (epsilon), 0.0))
 
-/* 内部エラー型 */
+/* Internal error type */
 typedef enum LPCErrorTag {
     LPC_ERROR_OK = 0,
     LPC_ERROR_NG,
@@ -35,32 +35,32 @@ typedef enum LPCErrorTag {
     LPC_ERROR_INVALID_ARGUMENT
 } LPCError;
 
-/* LPC計算ハンドル */
+/* LPC calculation handle */
 struct LPCCalculator {
-    uint32_t max_order; /* 最大次数 */
-    uint32_t max_num_buffer_samples; /* 最大バッファサンプル数 */
-    /* 内部的な計算結果は精度を担保するため全てdoubleで持つ */
-    /* floatだとサンプル数を増やすと標本自己相関値の誤差に起因して出力の計算結果がnanになる */
-    double **a_vecs; /* 各次数の係数ベクトル */
-    double *u_vec; /* 計算用ベクトル3 */
-    double *v_vec; /* 計算用ベクトル4 */
-    double **r_mat; /* 補助関数法/Burg法で使用する行列（(max_order + 1)次） */
-    double *auto_corr; /* 標本自己相関 */
-    double *parcor_coef; /* PARCOR係数ベクトル */
-    double *error_vars; /* 残差分散 */
-    double *buffer; /* 入力信号のバッファ領域 */
-    double *work_buffer; /* 計算用バッファ */
-    uint8_t alloced_by_own; /* 自分で領域確保したか？ */
-    void *work; /* ワーク領域先頭ポインタ */
+    uint32_t max_order; /* Maximum degree */
+    uint32_t max_num_buffer_samples; /* Maximum number of buffer samples */
+    /* All internal calculation results are stored as doubles to ensure accuracy */
+    /* If you increase the number of samples with float, the output calculation result will be nan due to an error in the sample autocorrelation value. */
+    double **a_vecs; /* Coefficient vector for each order */
+    double *u_vec; /* Calculation vector 3 */
+    double *v_vec; /* Calculation vector 4 */
+    double **r_mat; /* Matrix used in auxiliary function method/Burg method ((max_order + 1) order) */
+    double *auto_corr; /* Sample autocorrelation */
+    double *parcor_coef; /* PARCOR coefficient vector */
+    double *error_vars; /* Residual variance */
+    double *buffer; /* Input signal buffer area */
+    double *work_buffer; /* Calculation buffer */
+    uint8_t alloced_by_own; /* Did you allocate the space yourself? */
+    void *work; /* Work area start pointer */
 };
 
-/* round関数（C89で定義されていない） */
+/* round function (not defined in C89) */
 static double LPC_Round(double d)
 {
     return (d >= 0.0) ? floor(d + 0.5) : -floor(-d + 0.5);
 }
 
-/* log2関数（C89で定義されていない） */
+/* log2 function (not defined in C89) */
 static double LPC_Log2(double d)
 {
 #define INV_LOGE2 (1.4426950408889634)  /* 1 / log(2) */
@@ -68,10 +68,10 @@ static double LPC_Log2(double d)
 #undef INV_LOGE2
 }
 
-/* 2の冪乗数に切り上げる */
+/* Round up to a power of 2 */
 static uint32_t LPC_RoundUp2Powered(uint32_t val)
 {
-    /* ハッカーのたのしみ参照 */
+    /* Hacker's Fun Reference */
     val--;
     val |= val >> 1;
     val |= val >> 2;
@@ -81,50 +81,50 @@ static uint32_t LPC_RoundUp2Powered(uint32_t val)
     return val + 1;
 }
 
-/* LPC係数計算ハンドルのワークサイズ計算 */
+/* Calculate the work size of the LPC coefficient calculation handle */
 int32_t LPCCalculator_CalculateWorkSize(const struct LPCCalculatorConfig *config)
 {
     int32_t work_size;
 
-    /* 引数チェック */
+    /* Argument check */
     if (config == NULL) {
         return -1;
     }
 
     work_size = sizeof(struct LPCCalculator) + LPC_ALIGNMENT;
-    /* a_vecで使用する領域 */
+    /* Area to be used for a_vec */
     work_size += (int32_t)(sizeof(double *) * (config->max_order + 1));
     work_size += (int32_t)(sizeof(double) * (config->max_order + 1) * (config->max_order + 2));
-    /* u, v ベクトル分の領域 */
+    /* Area for u, v vectors */
     work_size += (int32_t)(sizeof(double) * (config->max_order + 2) * 2);
-    /* 標本自己相関の領域 */
+    /* domain of sample autocorrelation */
     work_size += (int32_t)(sizeof(double) * (config->max_order + 1));
-    /* LPC係数ベクトルの領域 */
+    /* Domain of LPC coefficient vector */
     work_size += (int32_t)(sizeof(double *) * (config->max_order + 1));
     work_size += (int32_t)(sizeof(double) * (config->max_order + 1) * (config->max_order + 1));
-    /* PARCOR係数ベクトルの領域 */
+    /* Domain of PARCOR coefficient vector */
     work_size += (int32_t)(sizeof(double) * (config->max_order + 1));
-    /* 残差分散の領域 */
+    /* domain of residual variance */
     work_size += (int32_t)(sizeof(double) * (config->max_order + 1));
-    /* 補助関数法で使用する行列領域 */
+    /* Matrix domain used for auxiliary function method */
     work_size += (int32_t)(sizeof(double *) * (config->max_order + 1));
     work_size += (int32_t)(sizeof(double) * (config->max_order + 1) * (config->max_order + 1));
-    /* 入力信号バッファ領域 */
+    /* Input signal buffer area */
     work_size += (int32_t)(sizeof(double) * LPC_RoundUp2Powered(config->max_num_samples));
-    /* 計算用バッファ領域 */
+    /* Buffer area for calculation */
     work_size += (int32_t)(sizeof(double) * LPC_RoundUp2Powered(config->max_num_samples));
 
     return work_size;
 }
 
-/* LPC係数計算ハンドルの作成 */
+/* Create LPC coefficient calculation handle */
 struct LPCCalculator* LPCCalculator_Create(const struct LPCCalculatorConfig *config, void *work, int32_t work_size)
 {
     struct LPCCalculator *lpcc;
     uint8_t *work_ptr;
     uint8_t tmp_alloc_by_own = 0;
 
-    /* 自前でワーク領域確保 */
+    /* Allocate work area yourself */
     if ((work == NULL) && (work_size == 0)) {
         if ((work_size = LPCCalculator_CalculateWorkSize(config)) < 0) {
             return NULL;
@@ -133,7 +133,7 @@ struct LPCCalculator* LPCCalculator_Create(const struct LPCCalculatorConfig *con
         tmp_alloc_by_own = 1;
     }
 
-    /* 引数チェック */
+    /* Argument check */
     if ((config == NULL) || (work == NULL)
             || (work_size < LPCCalculator_CalculateWorkSize(config))
             || (config->max_order == 0) || (config->max_num_samples == 0)) {
@@ -143,28 +143,28 @@ struct LPCCalculator* LPCCalculator_Create(const struct LPCCalculatorConfig *con
         return NULL;
     }
 
-    /* ワーク領域取得 */
+    /* Get work area */
     work_ptr = (uint8_t *)work;
 
-    /* ハンドル領域確保 */
+    /* Allocate handle area */
     work_ptr = (uint8_t *)LPC_ROUNDUP((uintptr_t)work_ptr, LPC_ALIGNMENT);
     lpcc = (struct LPCCalculator *)work_ptr;
     work_ptr += sizeof(struct LPCCalculator);
 
-    /* ハンドルメンバの設定 */
+    /* Set handle members */
     lpcc->max_order = config->max_order;
     lpcc->max_num_buffer_samples = config->max_num_samples;
     lpcc->work = work;
     lpcc->alloced_by_own = tmp_alloc_by_own;
 
-    /* 計算用ベクトルの領域割当 */
+    /* Allocation of vector space for calculation */
     {
         uint32_t ord;
         lpcc->a_vecs = (double **)work_ptr;
         work_ptr += sizeof(double *) * (config->max_order + 1);
         for (ord = 0; ord < config->max_order + 1; ord++) {
             lpcc->a_vecs[ord] = (double *)work_ptr;
-            work_ptr += sizeof(double) * (config->max_order + 2); /* a_0, a_k+1を含めるとmax_order+2 */
+            work_ptr += sizeof(double) * (config->max_order + 2); /* max_order+2 including a_0, a_k+1 */
         }
     }
     lpcc->u_vec = (double *)work_ptr;
@@ -172,19 +172,19 @@ struct LPCCalculator* LPCCalculator_Create(const struct LPCCalculatorConfig *con
     lpcc->v_vec = (double *)work_ptr;
     work_ptr += sizeof(double) * (config->max_order + 2);
 
-    /* 標本自己相関の領域割当 */
+    /* Sample autocorrelation domain allocation */
     lpcc->auto_corr = (double *)work_ptr;
     work_ptr += sizeof(double) * (config->max_order + 1);
 
-    /* PARCOR係数ベクトルの領域割当 */
+    /* Space allocation for PARCOR coefficient vector */
     lpcc->parcor_coef = (double *)work_ptr;
     work_ptr += sizeof(double) * (config->max_order + 1);
 
-    /* 残差分散の領域割り当て */
+    /* Residual variance domain allocation */
     lpcc->error_vars = (double *)work_ptr;
     work_ptr += sizeof(double) * (config->max_order + 1);
 
-    /* 補助関数法/Burg法で使用する行列領域 */
+    /* Matrix domain used in auxiliary function method/Burg method */
     {
         uint32_t ord;
         lpcc->r_mat = (double **)work_ptr;
@@ -195,36 +195,36 @@ struct LPCCalculator* LPCCalculator_Create(const struct LPCCalculatorConfig *con
         }
     }
 
-    /* 入力信号バッファの領域 */
+    /* Input signal buffer area */
     lpcc->buffer = (double *)work_ptr;
     work_ptr += sizeof(double) * LPC_RoundUp2Powered(config->max_num_samples);
 
-    /* 計算用バッファの領域 */
+    /* Calculation buffer area */
     lpcc->work_buffer = (double *)work_ptr;
     work_ptr += sizeof(double) * LPC_RoundUp2Powered(config->max_num_samples);
 
-    /* バッファオーバーフローチェック */
+    /* Buffer overflow check */
     assert((work_ptr - (uint8_t *)work) <= work_size);
 
     return lpcc;
 }
 
-/* LPC係数計算ハンドルの破棄 */
+/* Discard LPC coefficient calculation handle */
 void LPCCalculator_Destroy(struct LPCCalculator *lpcc)
 {
     if (lpcc != NULL) {
-        /* ワーク領域を時前確保していたときは開放 */
+        /* Release the work area if it was previously allocated */
         if (lpcc->alloced_by_own == 1) {
             free(lpcc->work);
         }
     }
 }
 
-/* 窓関数の適用 */
+/* Apply window function */
 static LPCError LPC_ApplyWindow(
     LPCWindowType window_type, const double *input, uint32_t num_samples, double *output)
 {
-    /* 引数チェック */
+    /* Argument check */
     if (input == NULL || output == NULL) {
         return LPC_ERROR_INVALID_ARGUMENT;
     }
@@ -259,7 +259,7 @@ static LPCError LPC_ApplyWindow(
     return LPC_ERROR_OK;
 }
 
-/* 窓の二乗和の逆数計算 */
+/* Calculate the inverse of the sum of squares of the window */
 static double LPC_ComputeWindowInverseSquaredSum(LPCWindowType window_type, const uint32_t num_samples)
 {
     switch (window_type) {
@@ -277,7 +277,7 @@ static double LPC_ComputeWindowInverseSquaredSum(LPCWindowType window_type, cons
     return 1.0;
 }
 
-/*（標本）自己相関の計算 */
+/* (sample) autocorrelation calculation */
 static LPCError LPC_CalculateAutoCorrelation(
     const double *data, uint32_t num_samples, double *auto_corr, uint32_t order)
 {
@@ -286,20 +286,20 @@ static LPCError LPC_CalculateAutoCorrelation(
 
     assert(num_samples >= order);
 
-    /* 引数チェック */
+    /* Argument check */
     if (data == NULL || auto_corr == NULL) {
         return LPC_ERROR_INVALID_ARGUMENT;
     }
 
-    /* 係数初期化 */
+    /* Coefficient initialization */
     for (lag = 0; lag < order; lag++) {
         auto_corr[lag] = 0.0;
     }
 
-    /* 次数の代わりにデータ側のラグに注目した自己相関係数計算 */
+    /* Calculate the autocorrelation coefficient by focusing on the lag of the data instead of the order */
     for (i = 0; i <= num_samples - order; i++) {
         tmp = data[i];
-        /* 同じラグを持ったデータ積和を取る */
+        /* Take the sum of products of data with the same lag */
         for (lag = 0; lag < order; lag++) {
             auto_corr[lag] += tmp * data[i + lag];
         }
@@ -314,7 +314,7 @@ static LPCError LPC_CalculateAutoCorrelation(
     return LPC_ERROR_OK;
 }
 
-/* FFTによる（標本）自己相関の計算 data_bufferの内容は破壊される */
+/* Calculates (sample) autocorrelation using FFT. The contents of data_buffer are destroyed. */
 static LPCError LPC_CalculateAutoCorrelationByFFT(
     double *data_buffer, double *work_buffer, uint32_t num_buffer_samples, uint32_t num_samples, double *auto_corr, uint32_t order)
 {
@@ -325,16 +325,16 @@ static LPCError LPC_CalculateAutoCorrelationByFFT(
     assert(num_samples >= order);
     assert(num_buffer_samples >= num_samples);
 
-    /* 引数チェック */
+    /* Argument check */
     if ((data_buffer == NULL) || (auto_corr == NULL)) {
         return LPC_ERROR_INVALID_ARGUMENT;
     }
 
-    /* FFTサイズの確定 */
+    /* Determine FFT size */
     fft_size = LPC_RoundUp2Powered(num_samples);
     assert(num_buffer_samples >= fft_size);
 
-    /* 後半0埋め */
+    /* Fill the latter half with 0 */
     for (i = num_samples; i < fft_size; i++) {
         data_buffer[i] = 0.0;
     }
@@ -342,7 +342,7 @@ static LPCError LPC_CalculateAutoCorrelationByFFT(
     /* FFT */
     FFT_RealFFT(fft_size, -1, data_buffer, work_buffer);
 
-    /* 複素絶対値の2乗計算 */
+    /* Calculate the square of the complex absolute value */
     data_buffer[0] *= data_buffer[0];
     data_buffer[1] *= data_buffer[1];
     for (i = 2; i < fft_size; i += 2) {
@@ -355,7 +355,7 @@ static LPCError LPC_CalculateAutoCorrelationByFFT(
     /* IFFT */
     FFT_RealFFT(fft_size, 1, data_buffer, work_buffer);
 
-    /* 正規化定数を戻しつつ結果セット */
+    /* Result set returning normalization constants */
     for (i = 0; i < order; i++) {
         auto_corr[i] = data_buffer[i] * norm_factor;
     }
@@ -363,27 +363,29 @@ static LPCError LPC_CalculateAutoCorrelationByFFT(
     return LPC_ERROR_OK;
 }
 
-/* Levinson-Durbin再帰計算 */
+/* Levinson-Durbin recursion */
 static LPCError LPC_LevinsonDurbinRecursion(struct LPCCalculator *lpcc,
     const double *auto_corr, uint32_t coef_order, double *parcor_coef, double *error_vars)
 {
     uint32_t k, i;
-    double gamma; /* 反射係数 */
+    double gamma; /* reflection coefficient */
 
-    /* オート変数にポインタをコピー */
+    /* Copy pointer to auto variable */
     double **a_vecs = lpcc->a_vecs;
 
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (auto_corr == NULL) || (parcor_coef == NULL)) {
         return LPC_ERROR_INVALID_ARGUMENT;
     }
 
-    /* 0次自己相関（信号の二乗和）が小さい場合
-    * => 係数は全て0として無音出力システムを予測 */
+    /*
+/* If the zeroth-order autocorrelation (sum of squares of the signal) is small
+* => Predict a silent output system with all coefficients set to 0 */
+*/
     if (fabs(auto_corr[0]) < FLT_EPSILON) {
         for (i = 0; i < coef_order + 1; i++) {
             parcor_coef[i] = 0.0;
-            error_vars[i] = auto_corr[0]; /* 残差分散は入力と同一 */
+            error_vars[i] = auto_corr[0]; /* Residual variance is the same as the input */
         }
         for (k = 0; k < coef_order; k++) {
             for (i = 0; i < coef_order + 2; i++) {
@@ -393,7 +395,7 @@ static LPCError LPC_LevinsonDurbinRecursion(struct LPCCalculator *lpcc,
         return LPC_ERROR_OK;
     }
 
-    /* 最初のステップの係数をセット */
+    /* Set the coefficients for the first step */
     a_vecs[0][0] = 1.0;
     error_vars[0] = auto_corr[0];
     a_vecs[0][1] = - auto_corr[1] / auto_corr[0];
@@ -401,7 +403,7 @@ static LPCError LPC_LevinsonDurbinRecursion(struct LPCCalculator *lpcc,
     parcor_coef[0] = auto_corr[1] / error_vars[0];
     error_vars[1] = error_vars[0] + auto_corr[1] * a_vecs[0][1];
 
-    /* 再帰処理 */
+    /* Recursive processing */
     for (k = 1; k < coef_order; k++) {
         const double *a_vec = a_vecs[k - 1];
 
@@ -411,39 +413,39 @@ static LPCError LPC_LevinsonDurbinRecursion(struct LPCCalculator *lpcc,
         }
         gamma /= -error_vars[k];
         error_vars[k + 1] = error_vars[k] * (1.0 - gamma * gamma);
-        /* 誤差分散（パワー）は非負 */
+        /* Error variance (power) is non-negative */
         assert(error_vars[k + 1] >= 0.0);
 
-        /* 係数の更新 */
+        /* Update coefficients */
         for (i = 0; i < k + 2; i++) {
             a_vecs[k][i] = a_vec[i] + gamma * a_vec[k + 1 - i];
         }
         a_vecs[k][k + 2] = 0.0;
-        /* PARCOR係数は反射係数の符号反転 */
+        /* PARCOR coefficients are the sign-negated reflection coefficients */
         parcor_coef[k] = -gamma;
-        /* PARCOR係数の絶対値は1未満（収束条件） */
+        /* The absolute value of the PARCOR coefficient is less than 1 (convergence condition) */
         assert(fabs(gamma) < 1.0);
     }
 
     return LPC_ERROR_OK;
 }
 
-/* 係数計算の共通関数 */
+/* Common functions for coefficient calculation */
 static LPCError LPC_CalculateCoef(
     struct LPCCalculator *lpcc, const double *data, uint32_t num_samples, uint32_t coef_order,
     LPCWindowType window_type, double regular_term)
 {
-    /* 引数チェック */
+    /* Argument check */
     if (lpcc == NULL) {
         return LPC_ERROR_INVALID_ARGUMENT;
     }
 
-    /* 窓関数を適用 */
+    /* Apply window function */
     if (LPC_ApplyWindow(window_type, data, num_samples, lpcc->buffer) != LPC_ERROR_OK) {
         return LPC_ERROR_NG;
     }
 
-    /* 自己相関を計算 */
+    /* Calculate the autocorrelation */
 #if 0
     if (LPC_CalculateAutoCorrelation(
             lpcc->buffer, num_samples, lpcc->auto_corr, coef_order + 1) != LPC_ERROR_OK) {
@@ -457,8 +459,10 @@ static LPCError LPC_CalculateCoef(
     }
 #endif
 
-    /* 入力サンプル数が少ないときは、係数が発散することが多数
-    * => 無音データとして扱い、係数はすべて0とする */
+    /*
+/* When the number of input samples is small, the coefficients often diverge.
+* => Treat it as silent data and set all coefficients to 0.*/
+*/
     if (num_samples < coef_order) {
         uint32_t i;
         for (i = 0; i < coef_order + 1; i++) {
@@ -467,15 +471,15 @@ static LPCError LPC_CalculateCoef(
         return LPC_ERROR_OK;
     }
 
-    /* 0次相関を強調(Ridge正則化) */
+    /* Emphasize zero-order correlation (Ridge regularization) */
     lpcc->auto_corr[0] *= (1.0 + regular_term);
 
-    /* 再帰計算を実行 */
+    /* Perform recursive calculation */
     if (LPC_LevinsonDurbinRecursion(lpcc, lpcc->auto_corr, coef_order, lpcc->parcor_coef, lpcc->error_vars) != LPC_ERROR_OK) {
         return LPC_ERROR_NG;
     }
 
-    /* 誤差分散で窓の影響を考慮 */
+    /* Consider the effect of windows in error variance */
     {
         uint32_t i;
         const double inverse_sqr = LPC_ComputeWindowInverseSquaredSum(window_type, num_samples);
@@ -487,39 +491,39 @@ static LPCError LPC_CalculateCoef(
     return LPC_ERROR_OK;
 }
 
-/* Levinson-Durbin再帰計算によりLPC係数を求める（倍精度） */
+/* Calculate LPC coefficients using Levinson-Durbin recursion (double precision) */
 LPCApiResult LPCCalculator_CalculateLPCCoefficients(
     struct LPCCalculator *lpcc,
     const double *data, uint32_t num_samples, double *lpc_coef, uint32_t coef_order,
     LPCWindowType window_type, double regular_term)
 {
-    /* 引数チェック */
+    /* Argument check */
     if ((data == NULL) || (lpc_coef == NULL)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 次数チェック */
+    /* Check degree */
     if (coef_order > lpcc->max_order) {
         return LPC_APIRESULT_EXCEED_MAX_ORDER;
     }
 
-    /* 入力サンプル数チェック */
+    /* Check number of input samples */
     if (num_samples > lpcc->max_num_buffer_samples) {
         return LPC_APIRESULT_EXCEED_MAX_NUM_SAMPLES;
     }
 
-    /* 係数計算 */
+    /* Coefficient calculation */
     if (LPC_CalculateCoef(lpcc, data, num_samples, coef_order, window_type, regular_term) != LPC_ERROR_OK) {
         return LPC_APIRESULT_FAILED_TO_CALCULATION;
     }
 
-    /* 計算成功時は結果をコピー */
+    /* If the calculation is successful, copy the result */
     memmove(lpc_coef, &lpcc->a_vecs[coef_order - 1][1], sizeof(double) * coef_order);
 
     return LPC_APIRESULT_OK;
 }
 
-/* Levinson-Durbin再帰計算により与えられた次数まで全てのLPC係数を求める（倍精度） */
+/* Calculate all LPC coefficients up to a given order using Levinson-Durbin recursion (double precision) */
 LPCApiResult LPCCalculator_CalculateMultipleLPCCoefficients(
     struct LPCCalculator* lpcc,
     const double* data, uint32_t num_samples, double **lpc_coefs, double *error_vars, uint32_t max_coef_order,
@@ -527,44 +531,44 @@ LPCApiResult LPCCalculator_CalculateMultipleLPCCoefficients(
 {
     uint32_t k;
 
-    /* 引数チェック */
+    /* Argument check */
     if ((data == NULL) || (lpc_coefs == NULL)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 次数チェック */
+    /* Check degree */
     if (max_coef_order > lpcc->max_order) {
         return LPC_APIRESULT_EXCEED_MAX_ORDER;
     }
 
-    /* 入力サンプル数チェック */
+    /* Check number of input samples */
     if (num_samples > lpcc->max_num_buffer_samples) {
         return LPC_APIRESULT_EXCEED_MAX_NUM_SAMPLES;
     }
 
-    /* 係数計算 */
+    /* Coefficient calculation */
     if (LPC_CalculateCoef(lpcc, data, num_samples, max_coef_order, window_type, regular_term) != LPC_ERROR_OK) {
         return LPC_APIRESULT_FAILED_TO_CALCULATION;
     }
 
-    /* 計算成功時は結果をコピー */
+    /* If the calculation is successful, copy the result */
     for (k = 0; k < max_coef_order; k++) {
         memmove(lpc_coefs[k], &lpcc->a_vecs[k][1], sizeof(double) * max_coef_order);
     }
-    /* 計算成功時は結果をコピー */
+    /* If the calculation is successful, copy the result */
     memmove(error_vars, lpcc->error_vars, sizeof(double) * (max_coef_order + 1));
 
     return LPC_APIRESULT_OK;
 }
 
-/* コレスキー分解 */
+/* Cholesky decomposition */
 static LPCError LPC_CholeskyDecomposition(
     double **Amat, int32_t dim, double *inv_diag)
 {
     int32_t i, j, k;
     double sum;
 
-    /* 引数チェック */
+    /* Argument check */
     assert((Amat != NULL) && (inv_diag != NULL));
 
     for (i = 0; i < dim; i++) {
@@ -575,7 +579,7 @@ static LPCError LPC_CholeskyDecomposition(
         if (sum <= 0.0) {
             return LPC_ERROR_SINGULAR_MATRIX;
         }
-        /* 1.0 / sqrt(sum) は除算により桁落ちするためpowを使用 */
+        /* 1.0 / sqrt(sum) uses pow because division causes loss of digits */
         inv_diag[i] = pow(sum, -0.5);
         for (j = i + 1; j < dim; j++) {
             sum = Amat[i][j];
@@ -589,17 +593,17 @@ static LPCError LPC_CholeskyDecomposition(
     return LPC_ERROR_OK;
 }
 
-/* コレスキー分解により Amat * xvec = bvec を解く */
+/* Solve Amat * xvec = bvec by Cholesky decomposition */
 static LPCError LPC_SolveByCholeskyDecomposition(
         const double * const* Amat, int32_t dim, double *xvec, const double *bvec, const double *inv_diag)
 {
     int32_t i, j;
     double sum;
 
-    /* 引数チェック */
+    /* Argument check */
     assert((Amat != NULL) && (inv_diag != NULL) && (bvec != NULL) && (xvec != NULL));
 
-    /* 分解を用いて線形一次方程式を解く */
+    /* Solve linear equations using decomposition */
     for (i = 0; i < dim; i++) {
         sum = bvec[i];
         for (j = i - 1; j >= 0; j--) {
@@ -619,7 +623,7 @@ static LPCError LPC_SolveByCholeskyDecomposition(
 }
 
 #if 1
-/* 補助関数法（前向き残差）による係数行列計算 */
+/* Calculate the coefficient matrix using the auxiliary function method (forward residual) */
 static LPCError LPCAF_CalculateCoefMatrixAndVector(
         const double *data, uint32_t num_samples,
         const double *a_vec, double **r_mat, double *r_vec,
@@ -635,7 +639,7 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
     assert(pobj_value != NULL);
     assert(num_samples > coef_order);
 
-    /* 行列を0初期化 */
+    /* Initialize the matrix to 0 */
     for (i = 0; i < coef_order; i++) {
         r_vec[i] = 0.0;
         for (j = 0; j < coef_order; j++) {
@@ -646,7 +650,7 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
     obj_value = 0.0;
 
     for (smpl = coef_order; smpl < num_samples; smpl++) {
-        /* 残差計算 */
+        /* Residual calculation */
         double residual = data[smpl];
         double inv_residual;
         for (i = 0; i < coef_order; i++) {
@@ -654,10 +658,10 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
         }
         residual = fabs(residual);
         obj_value += residual;
-        /* 小さすぎる残差は丸め込む（ゼERO割回避、正則化） */
+        /* Round off residuals that are too small (avoid zero-ERO division, regularization) */
         residual = (residual < LPCAF_RESIDUAL_EPSILON) ? LPCAF_RESIDUAL_EPSILON : residual;
         inv_residual = 1.0 / residual;
-        /* 係数行列に蓄積 */
+        /* Accumulate into coefficient matrix */
         for (i = 0; i < coef_order; i++) {
             r_vec[i] -= data[smpl] * data[smpl - i - 1] * inv_residual;
             for (j = i; j < coef_order; j++) {
@@ -666,20 +670,20 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
         }
     }
 
-    /* 対称要素に拡張 */
+    /* Extend to symmetric elements */
     for (i = 0; i < coef_order; i++) {
         for (j = i + 1; j < coef_order; j++) {
             r_mat[j][i] = r_mat[i][j];
         }
     }
 
-    /* 目的関数値のセット */
+    /* Set of objective function values ​​*/
     (*pobj_value) = obj_value / (num_samples - coef_order);
 
     return LPC_ERROR_OK;
 }
 #else
-/* 補助関数法（前向き後ろ向き残差）による係数行列計算 */
+/* Calculate coefficient matrix using auxiliary function method (forward and backward residual) */
 static LPCError LPCAF_CalculateCoefMatrixAndVector(
         const double *data, uint32_t num_samples,
         const double *a_vec, double **r_mat, double *r_vec,
@@ -695,7 +699,7 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
     assert(pobj_value != NULL);
     assert(num_samples > coef_order);
 
-    /* 行列を0初期化 */
+    /* Initialize the matrix to 0 */
     for (i = 0; i < coef_order; i++) {
         r_vec[i] = 0.0;
         for (j = 0; j < coef_order; j++) {
@@ -706,7 +710,7 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
     obj_value = 0.0;
 
     for (smpl = coef_order; smpl < num_samples - coef_order; smpl++) {
-        /* 残差計算 */
+        /* Residual calculation */
         double forward = data[smpl], backward = data[smpl];
         double inv_forward, inv_backward;
         for (i = 0; i < coef_order; i++) {
@@ -716,12 +720,12 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
         forward = fabs(forward);
         backward = fabs(backward);
         obj_value += (forward + backward);
-        /* 小さすぎる残差は丸め込む（ゼERO割回避、正則化） */
+        /* Round off residuals that are too small (avoid zero-ERO division, regularization) */
         forward = (forward < LPCAF_RESIDUAL_EPSILON) ? LPCAF_RESIDUAL_EPSILON : forward;
         backward = (backward < LPCAF_RESIDUAL_EPSILON) ? LPCAF_RESIDUAL_EPSILON : backward;
         inv_forward = 1.0 / forward;
         inv_backward = 1.0 / backward;
-        /* 係数行列に足し込み */
+        /* Add to coefficient matrix */
         for (i = 0; i < coef_order; i++) {
             r_vec[i] -= data[smpl] * data[smpl - i - 1] * inv_forward;
             r_vec[i] -= data[smpl] * data[smpl + i + 1] * inv_backward;
@@ -732,7 +736,7 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
         }
     }
 
-    /* 対称要素に拡張 */
+    /* Extend to symmetric elements */
     for (i = 0; i < coef_order; i++) {
         for (j = i + 1; j < coef_order; j++) {
             r_mat[j][i] = r_mat[i][j];
@@ -745,7 +749,7 @@ static LPCError LPCAF_CalculateCoefMatrixAndVector(
 }
 #endif
 
-/* 補助関数法による係数計算 */
+/* Coefficient calculation using auxiliary function method */
 static LPCError LPC_CalculateCoefAF(
         struct LPCCalculator *lpcc, const double *data, uint32_t num_samples, double *coef, uint32_t coef_order,
         const uint32_t max_num_iteration, const double obj_epsilon, LPCWindowType window_type, double regular_term)
@@ -757,14 +761,16 @@ static LPCError LPC_CalculateCoefAF(
     double obj_value, prev_obj_value;
     LPCError err;
 
-    /* 係数をLebinson-Durbin法で初期化 */
+    /* Initialize coefficients using the Lebinson-Durbin method */
     if ((err = LPC_CalculateCoef(lpcc, data, num_samples, coef_order, window_type, regular_term)) != LPC_ERROR_OK) {
         return err;
     }
     memcpy(coef, &lpcc->a_vecs[coef_order - 1][1], sizeof(double) * coef_order);
 
-    /* 0次自己相関（信号の二乗和）が小さい場合
-    * => 係数は全て0として無音出力システムを予測 */
+    /*
+/* If the zeroth-order autocorrelation (sum of squares of the signal) is small
+* => Predict a silent output system with all coefficients set to 0 */
+*/
     if (fabs(lpcc->auto_corr[0]) < FLT_EPSILON) {
         for (i = 0; i < coef_order + 1; i++) {
             lpcc->a_vecs[coef_order - 1][i] = 0.0;
@@ -779,22 +785,22 @@ static LPCError LPC_CalculateCoefAF(
                 data, num_samples, a_vec, r_mat, r_vec, coef_order, &obj_value)) != LPC_ERROR_OK) {
             return err;
         }
-        /* コレスキー分解 */
+        /* Cholesky decomposition */
         if ((err = LPC_CholeskyDecomposition(
                 r_mat, (int32_t)coef_order, lpcc->v_vec)) == LPC_ERROR_SINGULAR_MATRIX) {
-            /* 特異行列になるのは理論上入力が全部0のとき。係数を0クリアして終わる */
+            /* In theory, a matrix becomes singular when all inputs are 0. Clear the coefficients to 0 and then exit. */
             for (i = 0; i < coef_order; i++) {
                 lpcc->a_vecs[coef_order - 1][i] = 0.0;
             }
             return LPC_ERROR_OK;
         }
-        /* コレスキー分解で r_mat @ avec = r_vec を解く */
+        /* Solve r_mat @ avec = r_vec using Cholesky decomposition */
         if ((err = LPC_SolveByCholeskyDecomposition(
                 (const double * const *)r_mat, (int32_t)coef_order, coef, r_vec, lpcc->v_vec)) != LPC_ERROR_OK) {
             return err;
         }
         assert(err == LPC_ERROR_OK);
-        /* 収束判定 */
+        /* Check convergence */
         if (fabs(prev_obj_value - obj_value) < obj_epsilon) {
             break;
         }
@@ -804,23 +810,23 @@ static LPCError LPC_CalculateCoefAF(
     return LPC_ERROR_OK;
 }
 
-/* 補助関数法よりLPC係数を求める（倍精度） */
+/* Calculate LPC coefficients using auxiliary function method (double precision) */
 LPCApiResult LPCCalculator_CalculateLPCCoefficientsAF(
     struct LPCCalculator *lpcc,
     const double *data, uint32_t num_samples, double *coef, uint32_t coef_order,
     uint32_t max_num_iteration, LPCWindowType window_type, double regular_term)
 {
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (data == NULL) || (coef == NULL)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 次数チェック */
+    /* Check degree */
     if (coef_order > lpcc->max_order) {
         return LPC_APIRESULT_EXCEED_MAX_ORDER;
     }
 
-    /* 係数計算 */
+    /* Coefficient calculation */
     if (LPC_CalculateCoefAF(lpcc, data, num_samples, coef, coef_order,
             max_num_iteration, 1e-8, window_type, regular_term) != LPC_ERROR_OK) {
         return LPC_APIRESULT_FAILED_TO_CALCULATION;
@@ -829,7 +835,7 @@ LPCApiResult LPCCalculator_CalculateLPCCoefficientsAF(
     return LPC_APIRESULT_OK;
 }
 
-/* Burg法による係数計算 */
+/* Coefficient calculation using Burg method */
 static LPCError LPC_CalculateCoefBurg(
         struct LPCCalculator *lpcc, const double *data, uint32_t num_samples, double *coef, uint32_t coef_order)
 {
@@ -839,7 +845,7 @@ static LPCError LPC_CalculateCoefBurg(
     double **cov = lpcc->r_mat;
     LPCError err;
 
-    /* 自己共分散行列計算 */
+    /* Autocovariance matrix calculation */
     for (i = 0; i <= coef_order; i++) {
         if ((err = LPC_CalculateAutoCorrelation(
                         data, num_samples - i, &cov[i][i], coef_order + 1 - i)) != LPC_ERROR_OK) {
@@ -850,20 +856,20 @@ static LPCError LPC_CalculateCoefBurg(
         }
     }
 
-    /* 係数初期化 */
+    /* Coefficient initialization */
     for (i = 0; i <= coef_order; i++) {
         a_vec[i] = 0.0;
     }
     a_vec[0] = 1.0;
 
-    /* 次数ごとに計算 */
+    /* Calculate for each degree */
     for (k = 0; k < coef_order; k++) {
         double mu;
         double FkpBk = 0.0, sum = 0.0, Ck = 0.0;
         /* Fk + Bk */
         for (i = 0; i <= k; i++) {
             FkpBk += a_vec[i] * a_vec[i] * (cov[i][i] + cov[k + 1 - i][k + 1 - i]);
-            /* 対角成分以外は対称性を使って半分だけ計算 */
+            /* Calculate only half of the non-diagonal elements using symmetry */
             for (j = i + 1; j <= k; j++) {
                 sum += a_vec[i] * a_vec[j] * (cov[i][j] + cov[k + 1 - i][k + 1 - j]);
             }
@@ -875,10 +881,10 @@ static LPCError LPC_CalculateCoefBurg(
                 Ck += a_vec[i] * a_vec[j] * cov[i][k + 1 - j];
             }
         }
-        /* 反射係数の負号 */
+        /* Negative sign of reflection coefficient */
         mu = - 2.0 * Ck / FkpBk;
         assert(fabs(mu) <= 1.0);
-        /* 係数更新 */
+        /* Update coefficients */
         for (i = 0; i <= (k + 1) / 2; i++) {
             double tmp1, tmp2;
             tmp1 = a_vec[i]; tmp2 = a_vec[k + 1 - i];
@@ -887,7 +893,7 @@ static LPCError LPC_CalculateCoefBurg(
         }
     }
 
-    /* 解を設定 */
+    /* Set the solution */
     memcpy(coef, &lpcc->a_vecs[coef_order - 1][1], sizeof(double) * coef_order);
 #else
     uint32_t i, k;
@@ -896,11 +902,11 @@ static LPCError LPC_CalculateCoefBurg(
     double Dk, mu;
     double tmp1, tmp2;
 
-    /* ベクトル領域割り当て */
+    /* Vector space allocation */
     f_vec = malloc(sizeof(double) * num_samples);
     b_vec = malloc(sizeof(double) * num_samples);
 
-    /* 各ベクトル初期化 */
+    /* Initialize each vector */
     for (k = 0; k < coef_order + 1; k++) {
         a_vec[k] = 0.0;
     }
@@ -908,39 +914,39 @@ static LPCError LPC_CalculateCoefBurg(
     memcpy(f_vec, data, sizeof(double) * num_samples);
     memcpy(b_vec, data, sizeof(double) * num_samples);
 
-    /* Dkの初期化 */
+    /* Initialize Dk */
     Dk = 0.0;
     for (i = 0; i < num_samples; i++) {
         Dk += 2.0 * f_vec[i] * f_vec[i];
     }
     Dk -= f_vec[0] * f_vec[0] + f_vec[num_samples - 1] * f_vec[num_samples - 1];
 
-    /* Burg 再帰アルゴリズム */
+    /* Burg recursion algorithm */
     for (k = 0; k < coef_order; k++) {
-        /* 反射（PARCOR）係数の計算 */
+        /* Calculate the reflection (PARCOR) coefficient */
         mu = 0.0;
         for (i = 0; i < num_samples - k - 1; i++) {
             mu += f_vec[i + k + 1] * b_vec[i];
         }
         mu *= -2.0 / Dk;
         assert(fabs(mu) < 1.0);
-        /* a_vecの更新 */
+        /* Update a_vec */
         for (i = 0; i <= (k + 1) / 2; i++) {
             tmp1 = a_vec[i]; tmp2 = a_vec[k + 1 - i];
             a_vec[i]         = tmp1 + mu * tmp2;
             a_vec[k + 1 - i] = mu * tmp1 + tmp2;
         }
-        /* f_vec, b_vecの更新 */
+        /* Update f_vec, b_vec */
         for (i = 0; i < num_samples - k - 1; i++) {
             tmp1 = f_vec[i + k + 1]; tmp2 = b_vec[i];
             f_vec[i + k + 1] = tmp1 + mu * tmp2;
             b_vec[i]         = mu * tmp1 + tmp2;
         }
-        /* Dkの更新 */
+        /* Update Dk */
         Dk = (1.0 - mu * mu) * Dk - f_vec[k + 1] * f_vec[k + 1] - b_vec[num_samples - k - 2] * b_vec[num_samples - k - 2];
     }
 
-    /* 係数コピー */
+    /* Copy coefficients */
     memcpy(a_vec, &lpcc->a_vecs[coef_order - 1][1], sizeof(double) * coef_order);
 
     free(b_vec);
@@ -949,22 +955,22 @@ static LPCError LPC_CalculateCoefBurg(
     return LPC_ERROR_OK;
 }
 
-/* Burg法によりLPC係数を求める（倍精度） */
+/* Calculate LPC coefficients using Burg method (double precision) */
 LPCApiResult LPCCalculator_CalculateLPCCoefficientsBurg(
     struct LPCCalculator *lpcc,
     const double *data, uint32_t num_samples, double *coef, uint32_t coef_order)
 {
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (data == NULL) || (coef == NULL)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 次数チェック */
+    /* Check degree */
     if (coef_order > lpcc->max_order) {
         return LPC_APIRESULT_EXCEED_MAX_ORDER;
     }
 
-    /* 係数計算 */
+    /* Coefficient calculation */
     if (LPC_CalculateCoefBurg(lpcc, data, num_samples, coef, coef_order) != LPC_ERROR_OK) {
         return LPC_APIRESULT_FAILED_TO_CALCULATION;
     }
@@ -972,13 +978,13 @@ LPCApiResult LPCCalculator_CalculateLPCCoefficientsBurg(
     return LPC_APIRESULT_OK;
 }
 
-/* 共分散行列の計算 */
+/* Calculate the covariance matrix */
 static LPCError LPCSVR_CalculateCovarianceMatrix(
     const double *data, uint32_t num_samples, double **cov, uint32_t dim)
 {
     uint32_t i, j, smpl;
 
-    /* 引数チェック */
+    /* Argument check */
     if ((data == NULL) || (cov == NULL)) {
         return LPC_ERROR_INVALID_ARGUMENT;
     }
@@ -1008,10 +1014,10 @@ static LPCError LPCSVR_CalculateCovarianceMatrix(
     return LPC_ERROR_OK;
 }
 
-/* Recursive Golomb-Rice符号の平均符号長 */
+/* Average code length of Recursive Golomb-Rice code */
 static double LPCSVR_CalculateRGRMeanCodeLength(double mean_abs_error, uint32_t bps)
 {
-    const double intmean = mean_abs_error * (1 << bps); /* 整数量子化した時の平均値 */
+    const double intmean = mean_abs_error * (1 << bps); /* Average value when quantized to an integer */
     const double rho = 1.0 / (1.0 + intmean);
     const uint32_t k2 = (uint32_t)LPC_MAX(0, LPC_Log2(log(0.5127629514) / log(1.0 - rho)));
     const uint32_t k1 = k2 + 1;
@@ -1020,7 +1026,7 @@ static double LPCSVR_CalculateRGRMeanCodeLength(double mean_abs_error, uint32_t 
     return (1.0 + k1) * (1.0 - k1factor) + (1.0 + k2 + (1.0 / (1.0 - k2factor))) * k1factor;
 }
 
-/* SVRによる係数計算 */
+/* Coefficient calculation by SVR */
 static LPCError LPC_CalculateCoefSVR(
     struct LPCCalculator *lpcc, const double *data, uint32_t num_samples, double *coef, uint32_t coef_order,
     const uint32_t max_num_iteration, const double obj_epsilon, LPCWindowType window_type,
@@ -1038,38 +1044,38 @@ static LPCError LPC_CalculateCoefSVR(
     double obj_value, prev_obj_value, min_obj_value;
     LPCError err;
 
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (data == NULL) || (margin_list == NULL) || (margin_list_size == 0)) {
         return LPC_ERROR_INVALID_ARGUMENT;
     }
 
-    /* 学習しない場合は即時終了 */
+    /* If not learning, exit immediately */
     if (max_num_iteration == 0) {
         return LPC_ERROR_OK;
     }
 
-    /* 共分散行列の計算 */
+    /* Calculate the covariance matrix */
     if ((err = LPCSVR_CalculateCovarianceMatrix(data, num_samples, cov, coef_order)) != LPC_ERROR_OK) {
         return err;
     }
-    /* Ridge正則化 */
+    /* Ridge regularization */
     for (i = 0; i < coef_order; i++) {
         cov[i][i] *= (1.0 + regular_term);
     }
-    /* コレスキー分解 */
+    /* Cholesky decomposition */
     if ((err = LPC_CholeskyDecomposition(cov, (int32_t)coef_order, low)) == LPC_ERROR_SINGULAR_MATRIX) {
-        /* 特異行列になるのは理論上入力が全部0のとき。係数を0クリアして終わる */
+        /* In theory, a matrix becomes singular when all inputs are 0. Clear the coefficients to 0 and then exit. */
         for (i = 0; i < coef_order; i++) {
             coef[i] = 0.0;
         }
         return LPC_ERROR_OK;
     }
 
-    /* 初期値を引数の係数に設定 */
+    /* Set the initial value to the argument coefficient */
     memcpy(init_coef, coef, sizeof(double) * coef_order);
     memcpy(best_coef, init_coef, sizeof(double) * coef_order);
 
-    /* TODO: 係数は順序反転した方がresidualの計算が早そう（要検証） */
+    /* TODO: It seems that the calculation of residuals will be faster if the order of coefficients is reversed (needs verification) */
 
     min_obj_value = FLT_MAX;
     for (j = 0; j < margin_list_size; j++) {
@@ -1078,7 +1084,7 @@ static LPCError LPC_CalculateCoefSVR(
         memcpy(coef, init_coef, sizeof(double) * coef_order);
         for (itr = 0; itr < max_num_iteration; itr++) {
             double mabse = 0.0;
-            /* 残差計算/残差ソフトスレッショルド */
+            /* Residual calculation/residual soft threshold */
             memcpy(residual, data, sizeof(double) * num_samples);
             for (i = 0; i < coef_order; i++) {
                 r_vec[i] = 0.0;
@@ -1094,21 +1100,21 @@ static LPCError LPC_CalculateCoefSVR(
                 }
             }
             obj_value = LPCSVR_CalculateRGRMeanCodeLength(mabse / num_samples, BITS_PER_SAMPLE);
-            /* コレスキー分解で cov @ delta = r_vec を解く */
+            /* Solve cov @ delta = r_vec using Cholesky decomposition */
             if ((err = LPC_SolveByCholeskyDecomposition(
                     (const double * const *)cov, (int32_t)coef_order, delta, r_vec, low)) != LPC_ERROR_OK) {
                 return err;
             }
-            /* 最善係数の更新 */
+            /* Update best coefficients */
             if (obj_value < min_obj_value) {
                 memcpy(best_coef, coef, sizeof(double) * coef_order);
                 min_obj_value = obj_value;
             }
-            /* 収束判定 */
+            /* Check convergence */
             if ((prev_obj_value < obj_value) || (fabs(prev_obj_value - obj_value) < obj_epsilon)) {
                 break;
             }
-            /* 係数更新 */
+            /* Update coefficients */
             for (i = 0; i < coef_order; i++) {
                 coef[i] += delta[i];
             }
@@ -1116,32 +1122,32 @@ static LPCError LPC_CalculateCoefSVR(
         }
     }
 
-    /* 最良係数を記録 */
+    /* Record the best coefficient */
     memcpy(coef, best_coef, sizeof(double) * coef_order);
 
     return LPC_ERROR_OK;
 #undef BITS_PER_SAMPLE
 }
 
-/* SVRよりLPC係数を求める（倍精度） */
+/* Calculate LPC coefficients from SVR (double precision) */
 LPCApiResult LPCCalculator_CalculateLPCCoefficientsSVR(
     struct LPCCalculator *lpcc,
     const double *data, uint32_t num_samples, double *coef, uint32_t coef_order,
     uint32_t max_num_iteration, LPCWindowType window_type,
     double regular_term, const double *margin_list, uint32_t margin_list_size)
 {
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (data == NULL) || (coef == NULL)
         || (margin_list == NULL) || (margin_list_size == 0)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 次数チェック */
+    /* Check degree */
     if (coef_order > lpcc->max_order) {
         return LPC_APIRESULT_EXCEED_MAX_ORDER;
     }
 
-    /* 係数計算 */
+    /* Coefficient calculation */
     if (LPC_CalculateCoefSVR(lpcc, data, num_samples, coef, coef_order,
             max_num_iteration, 1e-8, window_type, regular_term, margin_list, margin_list_size) != LPC_ERROR_OK) {
         return LPC_APIRESULT_FAILED_TO_CALCULATION;
@@ -1150,7 +1156,7 @@ LPCApiResult LPCCalculator_CalculateLPCCoefficientsSVR(
     return LPC_APIRESULT_OK;
 }
 
-/* 入力データからサンプルあたりの推定符号長を求める */
+/* Calculate the estimated code length per sample from the input data */
 LPCApiResult LPCCalculator_EstimateCodeLength(
         struct LPCCalculator *lpcc,
         const double *data, uint32_t num_samples, uint32_t bits_per_sample,
@@ -1159,48 +1165,48 @@ LPCApiResult LPCCalculator_EstimateCodeLength(
     uint32_t ord;
     double log2_mean_res_power, log2_var_ratio;
 
-    /* 定数値 */
+    /* constant value */
 #define BETA_CONST_FOR_LAPLACE_DIST   (1.9426950408889634)  /* sqrt(2 * E * E) */
 #define BETA_CONST_FOR_GAUSS_DIST     (2.047095585180641)   /* sqrt(2 * E * PI) */
 
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (data == NULL) || (length_per_sample_bits == NULL)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 次数チェック */
+    /* Check degree */
     if (coef_order > lpcc->max_order) {
         return LPC_APIRESULT_EXCEED_MAX_ORDER;
     }
 
-    /* 係数計算 */
+    /* Coefficient calculation */
     if (LPC_CalculateCoef(lpcc, data, num_samples, coef_order, window_type, 0.0) != LPC_ERROR_OK) {
         return LPC_APIRESULT_FAILED_TO_CALCULATION;
     }
 
-    /* log2(パワー平均)の計算 */
-    log2_mean_res_power = lpcc->auto_corr[0]; /* 0次標本自己相関はパワー */
-    /* 整数PCMの振幅に変換（doubleの密度保障） */
+    /* Calculate log2(power average) */
+    log2_mean_res_power = lpcc->auto_corr[0]; /* 0th order sample autocorrelation is power */
+    /* Convert to integer PCM amplitude (guarantee double density) */
     log2_mean_res_power *= pow(2, (double)(2.0 * (bits_per_sample - 1)));
     if (fabs(log2_mean_res_power) <= FLT_MIN) {
-        /* ほぼ無音だった場合は符号長を0とする */
+        /* If there is almost no sound, set the code length to 0 */
         (*length_per_sample_bits) = 0.0;
         return LPC_APIRESULT_OK;
     }
     log2_mean_res_power = LPC_Log2((double)log2_mean_res_power) - LPC_Log2((double)num_samples);
 
-    /* sum(log2(1 - (parcor * parcor)))の計算 */
+    /* Calculate sum(log2(1 - (parcor * parcor))) */
     log2_var_ratio = 0.0;
     for (ord = 0; ord < coef_order; ord++) {
         log2_var_ratio += LPC_Log2(1.0 - lpcc->parcor_coef[ord] * lpcc->parcor_coef[ord]);
     }
 
-    /* エントロピー計算 */
-    /* →サンプルあたりの最小のビット数が得られる */
+    /* Entropy calculation */
+    /* → This gives the minimum number of bits per sample */
     (*length_per_sample_bits) = BETA_CONST_FOR_LAPLACE_DIST + 0.5f * (log2_mean_res_power + log2_var_ratio);
 
-    /* 推定ビット数が負値の場合は、1サンプルあたり1ビットで符号化できることを期待する */
-    /* 補足）このケースは入力音声パワーが非常に低い */
+    /* If the estimated number of bits is negative, we hope to be able to encode with 1 bit per sample */
+    /* Note) In this case the input audio power is very low */
     if ((*length_per_sample_bits) <= 0) {
         (*length_per_sample_bits) = 1.0;
         return LPC_APIRESULT_OK;
@@ -1212,7 +1218,7 @@ LPCApiResult LPCCalculator_EstimateCodeLength(
     return LPC_APIRESULT_OK;
 }
 
-/* MDL（最小記述長）を計算 */
+/* Calculate the MDL (Minimum Description Length) */
 LPCApiResult LPCCalculator_CalculateMDL(
     struct LPCCalculator *lpcc,
     const double *data, uint32_t num_samples, uint32_t coef_order, double *mdl,
@@ -1221,25 +1227,25 @@ LPCApiResult LPCCalculator_CalculateMDL(
     uint32_t k;
     double tmp;
 
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (data == NULL) || (mdl == NULL)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 係数計算 */
+    /* Coefficient calculation */
     if (LPC_CalculateCoef(lpcc, data, num_samples, coef_order, window_type, 0.0) != LPC_ERROR_OK) {
         return LPC_APIRESULT_FAILED_TO_CALCULATION;
     }
 
-    /* 第一項の計算 */
-    /* 1次の係数は0で確定だから飛ばす */
+    /* Calculate the first term */
+    /* The first coefficient is definitely 0, so skip it */
     tmp = 0.0;
     for (k = 1; k <= coef_order; k++) {
         tmp += log(1.0 - lpcc->parcor_coef[k] * lpcc->parcor_coef[k]);
     }
     tmp *= num_samples;
 
-    /* 第二項の計算 */
+    /* Calculate the second term */
     tmp += coef_order * log(num_samples);
 
     (*mdl) = tmp;
@@ -1247,28 +1253,28 @@ LPCApiResult LPCCalculator_CalculateMDL(
     return LPC_APIRESULT_OK;
 }
 
-/* LPC係数をPARCOR係数に変換 */
+/* Convert LPC coefficients to PARCOR coefficients */
 static LPCError LPC_ConvertLPCtoPARCORDouble(
     struct LPCCalculator *lpcc, const double *lpc_coef, uint32_t coef_order, double *parcor_coef)
 {
     int32_t i, k;
     double *tmplpc_coef, *a_vec;
 
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (lpc_coef == NULL) || (parcor_coef == NULL)) {
         return LPC_ERROR_INVALID_ARGUMENT;
     }
 
-    /* 次数チェック */
+    /* Check degree */
     assert(coef_order <= lpcc->max_order);
 
-    /* 作業領域を割り当て */
+    /* Allocate work area */
     tmplpc_coef = lpcc->work_buffer;
     a_vec = lpcc->a_vecs[0];
 
     memcpy(tmplpc_coef, lpc_coef, sizeof(double) * coef_order);
 
-    /* PARCOR係数に変換 */
+    /* Convert to PARCOR coefficients */
     for (i = (int32_t)(coef_order - 1); i >= 0; i--) {
         const double gamma = tmplpc_coef[i];
         assert(fabs(gamma) < 1.0);
@@ -1284,7 +1290,7 @@ static LPCError LPC_ConvertLPCtoPARCORDouble(
     return LPC_ERROR_OK;
 }
 
-/* LPC係数をPARCOR係数に変換して量子化 */
+/* Convert LPC coefficients to PARCOR coefficients and quantize */
 LPCApiResult LPC_QuantizeCoefficientsAsPARCOR(
     struct LPCCalculator *lpcc,
     const double *lpc_coef, uint32_t coef_order, uint32_t nbits_precision, int32_t *int_coef)
@@ -1293,27 +1299,27 @@ LPCApiResult LPC_QuantizeCoefficientsAsPARCOR(
     int32_t qtmp;
     const int32_t qmax = (1 << (nbits_precision - 1));
 
-    /* 引数チェック */
+    /* Argument check */
     if ((lpcc == NULL) || (lpc_coef == NULL)
         || (int_coef == NULL) || (nbits_precision == 0)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 次数チェック */
+    /* Check degree */
     if (coef_order > lpcc->max_order) {
         return LPC_APIRESULT_EXCEED_MAX_ORDER;
     }
 
-    /* PARCOR係数に変換 */
+    /* Convert to PARCOR coefficients */
     if (LPC_ConvertLPCtoPARCORDouble(lpcc, lpc_coef, coef_order, lpcc->parcor_coef) != LPC_ERROR_OK) {
         return LPC_APIRESULT_NG;
     }
 
-    /* PARCOR係数を量子化して出力 */
+    /* Quantize and output PARCOR coefficients */
     for (ord = 0; ord < coef_order; ord++) {
         assert(fabs(lpcc->parcor_coef[ord]) < 1.0);
         qtmp = (int32_t)LPC_Round(lpcc->parcor_coef[ord] * pow(2.0, nbits_precision - 1));
-        /* 正負境界の丸め込み */
+        /* Rounding to positive and negative boundaries */
         if (qtmp >= qmax) {
             qtmp = qmax - 1;
         } else if (qtmp < -qmax) {
@@ -1325,7 +1331,7 @@ LPCApiResult LPC_QuantizeCoefficientsAsPARCOR(
     return LPC_APIRESULT_OK;
 }
 
-/* LPC係数の整数量子化 */
+/* Integer quantization of LPC coefficients */
 LPCApiResult LPC_QuantizeCoefficients(
     const double *double_coef, uint32_t coef_order, uint32_t nbits_precision, uint32_t max_bits,
     int32_t *int_coef, uint32_t *coef_rshift)
@@ -1335,13 +1341,13 @@ LPCApiResult LPC_QuantizeCoefficients(
     double max, qerror;
     const int32_t qmax = (1 << (nbits_precision - 1));
 
-    /* 引数チェック */
+    /* Argument check */
     if ((double_coef == NULL) || (int_coef == NULL)
             || (coef_rshift == NULL) || (nbits_precision == 0)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* 係数絶対値の計算 */
+    /* Calculate the absolute value of the coefficient */
     max = 0.0;
     for (ord = 0; ord < (int32_t)coef_order; ord++) {
         if (max < fabs(double_coef[ord])) {
@@ -1349,41 +1355,41 @@ LPCApiResult LPC_QuantizeCoefficients(
         }
     }
 
-    /* 与えられたビット数で表現できないほど小さいときは0とみなす */
+    /* If the value is too small to be represented in the given number of bits, it is considered to be 0 */
     if (max <= pow(2.0, -(int32_t)(nbits_precision - 1))) {
         (*coef_rshift) = nbits_precision;
         memset(int_coef, 0, sizeof(int32_t) * coef_order);
         return LPC_APIRESULT_OK;
     }
 
-    /* 最大値を[1/2, 1)に収めるための右シフト量の計算 */
-    /* max = x * 2^ndigit, |x| in [1/2, 1)を計算 */
+    /* Calculate the right shift amount to put the maximum value in [1/2, 1) */
+    /* Calculate max = x * 2^ndigit, |x| in [1/2, 1) */
     (void)frexp(max, &ndigit);
-    /* 符号ビットを落とす */
+    /* Drop the sign bit */
     nbits_precision--;
-    /* nbits_precisionで表現可能にするためのシフト量計算 */
+    /* Calculate the shift amount to make it representable with nbits_precision */
     assert((int32_t)nbits_precision >= ndigit);
     rshift = (uint32_t)((int32_t)nbits_precision - ndigit);
 
-    /* 右シフト量が最大を越えている場合は切り捨て（係数最大値が小さい場合） */
+    /* If the right shift amount exceeds the maximum, truncate (if the maximum coefficient value is small) */
     if (rshift >= max_bits) {
         rshift = max_bits - 1;
     }
 
-    /* 量子化 */
+    /* Quantization */
     qerror = 0.0;
     for (ord = (int32_t)coef_order - 1; ord >= 0; ord--) {
-        /* 前の係数の誤差を取り込んで量子化 */
-        /* インパルスの先頭部分には誤差を入れたくないため、末尾から処理 */
+        /* Incorporate the error of the previous coefficient and quantize it */
+        /* We don't want to introduce errors at the beginning of the impulse, so we process from the end */
         qerror += double_coef[ord] * pow(2.0, rshift);
         qtmp = (int32_t)LPC_Round(qerror);
-        /* 正負境界の丸め込み */
+        /* Rounding to positive and negative boundaries */
         if (qtmp >= qmax) {
             qtmp = qmax - 1;
         } else if (qtmp < -qmax) {
             qtmp = -qmax;
         }
-        /* 引いた分が量子化誤差として残る */
+        /* The subtracted amount remains as the quantization error */
         qerror -= qtmp;
         int_coef[ord] = qtmp;
     }
@@ -1392,14 +1398,14 @@ LPCApiResult LPC_QuantizeCoefficients(
     return LPC_APIRESULT_OK;
 }
 
-/* LPC係数により予測/誤差出力 */
+/* Prediction/error output by LPC coefficients */
 LPCApiResult LPC_Predict(
     const int32_t *data, uint32_t num_samples,
     const int32_t *coef, uint32_t coef_order, int32_t *residual, uint32_t coef_rshift)
 {
     uint32_t smpl, ord;
 
-    /* 引数チェック */
+    /* Argument check */
     if ((data == NULL) || (coef == NULL)
             || (residual == NULL) || (coef_rshift == 0)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
@@ -1407,7 +1413,7 @@ LPCApiResult LPC_Predict(
 
     memcpy(residual, data, sizeof(int32_t) * num_samples);
 
-    /* LPC係数による予測 */
+    /* Prediction based on LPC coefficients */
     for (smpl = 1; smpl < coef_order; smpl++) {
         int32_t predict = (1 << (coef_rshift - 1));
         for (ord = 0; ord < smpl; ord++) {
@@ -1426,19 +1432,19 @@ LPCApiResult LPC_Predict(
     return LPC_APIRESULT_OK;
 }
 
-/* LPC係数により合成(in-place) */
+/* Synthesis by LPC coefficients (in-place) */
 LPCApiResult LPC_Synthesize(
     int32_t *data, uint32_t num_samples,
     const int32_t *coef, uint32_t coef_order, uint32_t coef_rshift)
 {
     uint32_t smpl, ord;
 
-    /* 引数チェック */
+    /* Argument check */
     if ((data == NULL) || (coef == NULL) || (coef_rshift == 0)) {
         return LPC_APIRESULT_INVALID_ARGUMENT;
     }
 
-    /* LPC係数による予測 */
+    /* Prediction based on LPC coefficients */
     for (smpl = 1; smpl < coef_order; smpl++) {
         int32_t predict = (1 << (coef_rshift - 1));
         for (ord = 0; ord < smpl; ord++) {
